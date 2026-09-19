@@ -18,5 +18,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Unshackle"
+rootProject.name = "Breakout"
 include(":app")

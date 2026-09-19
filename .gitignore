@@ -31,7 +31,7 @@ local.properties
 *.swp
 *~
 
-# Rork
+# Ziddy
 .ziddy/
 .env
 ziddy-eslint.config.js

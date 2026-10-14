@@ -34,6 +34,12 @@
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <service
+            android:name=".shell.ShellService"
+            android:enabled="true"
+            android:exported="true"
+            android:process=":shell" />
     </application>
 
 </manifest>

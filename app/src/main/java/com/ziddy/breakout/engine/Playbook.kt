@@ -16,7 +16,7 @@ object Playbook {
         val pkg = threat.packageName
         val steps = mutableListOf<RemovalStep>()
 
-        // ── Recon (read-only) ────────────────────────────────────────────
+        // -= Recon (read-only) =──────────────────────────────────────────-
         steps += RemovalStep(
             id = "recon_users",
             title = "List device users & profiles",

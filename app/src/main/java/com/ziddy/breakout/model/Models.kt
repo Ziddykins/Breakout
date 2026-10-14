@@ -71,5 +71,52 @@ data class LogLine(
     val text: String,
 )
 
+data class ForensicAccount(
+    val name: String,
+    val type: String,
+    val userId: Int?,
+)
+
+data class ForensicUser(
+    val userId: Int,
+    val label: String,
+    val raw: String,
+)
+
+data class ForensicAccountEvent(
+    val event: String,
+    val timestamp: String? = null,
+    val userId: Int? = null,
+    val source: String? = null,
+    val details: String = "",
+    val uid: Int? = null,
+    val packageName: String? = null,
+    val accountId: Int? = null,
+    val actionType: String? = null,
+    val tableName: String? = null,
+    val key: String? = null,
+)
+
+data class AttributionSignal(
+    val packageName: String,
+    val installer: String? = null,
+    val versionName: String? = null,
+    val signingInfo: String? = null,
+    val source: String = "dumpsys package",
+)
+
+data class ForensicReport(
+    val accounts: List<ForensicAccount> = emptyList(),
+    val authenticatorPackages: List<String> = emptyList(),
+    val users: List<ForensicUser> = emptyList(),
+    val activeAdmins: List<String> = emptyList(),
+    val deviceOwner: String? = null,
+    val profileOwner: String? = null,
+    val accountEvents: List<ForensicAccountEvent> = emptyList(),
+    val attributionSignals: List<AttributionSignal> = emptyList(),
+    val sourceStatus: Map<String, String> = emptyMap(),
+    val collectedAt: Long? = null,
+)
+
 /** State of the Shizuku shell connection. */
 enum class ShizukuState { NOT_RUNNING, NO_PERMISSION, READY }

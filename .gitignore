@@ -14,6 +14,7 @@ app.json
 build/
 local.properties
 
+
 # Android
 *.apk
 *.aab
@@ -25,6 +26,7 @@ local.properties
 .idea/
 *.iml
 .vscode/
+.vs/
 
 # macOS
 .DS_Store
@@ -36,3 +38,4 @@ local.properties
 .env
 ziddy-eslint.config.js
 app/src/main/java/**/Config.kt
+mdm_strings.txt

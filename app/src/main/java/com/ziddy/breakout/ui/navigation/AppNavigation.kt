@@ -2,8 +2,13 @@ package com.ziddy.breakout.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Radar
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -12,6 +17,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -20,8 +28,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ziddy.breakout.AppViewModel
+import com.ziddy.breakout.ui.screens.AboutScreen
 import com.ziddy.breakout.ui.screens.ConsoleScreen
+import com.ziddy.breakout.ui.screens.DeveloperScreen
+import com.ziddy.breakout.ui.screens.ForensicScreen
+import com.ziddy.breakout.ui.screens.PackagesScreen
+import com.ziddy.breakout.ui.screens.SettingsAuditScreen
 import com.ziddy.breakout.ui.screens.HomeScreen
+import com.ziddy.breakout.ui.screens.PermissionAuditScreen
 import com.ziddy.breakout.ui.theme.AppColors
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
@@ -29,10 +43,17 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 @Composable
 fun AppNavigation(viewModel: AppViewModel = viewModel()) {
     val navController = rememberNavController()
-    val tabs = listOf(
-        Tab("scan", "Scan", Icons.Rounded.Radar),
-        Tab("console", "Console", Icons.Rounded.Terminal),
-    )
+    var developerUnlocked by remember { mutableStateOf(false) }
+    val tabs = buildList {
+        add(Tab("scan", "Scan", Icons.Rounded.Radar))
+        add(Tab("permissions", "Permissions", Icons.Rounded.Key))
+        add(Tab("settings", "Settings", Icons.Rounded.Settings))
+        add(Tab("packages", "Packages", Icons.Rounded.Code))
+        add(Tab("forensic", "Forensic", Icons.Rounded.Security))
+        add(Tab("console", "Console", Icons.Rounded.Terminal))
+        add(Tab("about", "About", Icons.Rounded.Info))
+        if (developerUnlocked) add(Tab("developer", "Dev", Icons.Rounded.Code))
+    }
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
@@ -70,7 +91,19 @@ fun AppNavigation(viewModel: AppViewModel = viewModel()) {
             modifier = Modifier.padding(padding),
         ) {
             composable("scan") { HomeScreen(viewModel) }
+            composable("permissions") { PermissionAuditScreen(viewModel) }
+            composable("settings") { SettingsAuditScreen(viewModel) }
+            composable("packages") { PackagesScreen(viewModel) }
+            composable("forensic") { ForensicScreen(viewModel) }
             composable("console") { ConsoleScreen(viewModel) }
+            composable("about") {
+                AboutScreen(
+                    onDeveloperUnlock = {
+                        developerUnlocked = true
+                    },
+                )
+            }
+            composable("developer") { DeveloperScreen() }
         }
     }
 }

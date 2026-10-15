@@ -1,7 +1,7 @@
 <div align="center">
   
 # Breakout
-![Image](https://github.com/Ziddykins/Breakout/blob/master/app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png?raw=true)
+![Image](https://github.com/Ziddykins/Breakout/blob/master/app/breakout.png?raw=true)
 
 [![License: GPLv3](https://img.shields.io/badge/License-GNU_GPLv3-blue?logo=gnuprivacyguard)](https://gnu.org)
 

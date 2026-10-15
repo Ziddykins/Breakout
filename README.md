@@ -1,4 +1,7 @@
+<div align="center">
+  
 # Breakout
+![Image](https://github.com/Ziddykins/Breakout/blob/master/app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png?raw=true)
 
 [![License: GPLv3](https://img.shields.io/badge/License-GNU_GPLv3-blue?logo=gnuprivacyguard)](https://gnu.org)
 
@@ -8,6 +11,8 @@ Breakout helps people buying second-hand Android devices stay secure and avoid p
 The available playbooks and the actions they perform are shown plainly before you run them. By using Breakout, you acknowledge that you choose to run those actions and accept responsibility for the outcome, including data loss, device damage, or a bricked device. The author is not responsible for damage caused by your use of the program.
 
 ---
+
+</div>
 
 ## What Breakout does
 

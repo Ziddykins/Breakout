@@ -1,90 +1,85 @@
 # Breakout
 
-A clean, lightweight Breakout-style game implemented in Kotlin for Android.
+Breakout helps people buying second-hand Android devices stay secure and avoid paying for a device that is still managed, restricted, or quietly targeted. It identifies device-management threats, including devices accidentally or coercively added to corporate profiles, and provides focused removal playbooks through Shizuku. Built for clear diagnostics, informed purchases, and keeping control of your device.
 
-![screenshot](docs/screenshot.png)
-
-## Highlights
-
-- Classic Breakout gameplay: bounce the ball, break bricks, score points.
-- Built with Kotlin and Android tooling.
-- Small, easy-to-read codebase — great for learning game loops and simple physics on Android.
-
-## Features
-
-- Multiple levels and increasing difficulty
-- Power-ups (expand paddle, multi-ball, slow ball) — if present, list them here
-- Smooth touch controls and configurable input
-- High score tracking (local)
-
-> Tip: Add a `docs/screenshot.png` or a GIF at `docs/demo.gif` to show the game in action.
-
-## Getting started
-
-Prerequisites
-
-- Android Studio (2020.3 / Arctic Fox or newer recommended)
-- Android SDK (API level matching the project configuration)
-- JDK 11+
-
-Build and run
-
-1. Clone the repository
-
-   git clone https://github.com/Ziddykins/Breakout.git
-   cd Breakout
-
-2. Open the project in Android Studio
-3. Let Gradle sync and install any required SDK components
-4. Run on an emulator or a physical device
-
-If you prefer the command line, use the Gradle wrapper:
-
-   ./gradlew assembleDebug
-   ./gradlew installDebug
-
-## Controls
-
-- Touch the screen (or drag) to move the paddle.
-- Keyboard/gamepad controls work in the emulator if configured.
-
-Adjustments and input options may be available in the app settings.
-
-## Project Layout
-
-- app/ — Android application module
-- src/ — Kotlin source files (game logic, rendering, input)
-- assets/ or res/ — graphics and level data
-
-(Adjust the layout above to match the actual repository structure.)
-
-## Contributing
-
-Contributions are welcome! Suggested workflow:
-
-1. Fork the repo
-2. Create a feature branch (git checkout -b feat/awesome-stuff)
-3. Make changes and add tests where appropriate
-4. Open a Pull Request describing your changes
-
-Please follow Kotlin style conventions and write clear commit messages.
-
-## Issues
-
-Open an issue for bugs, feature requests, or questions. Provide device/emulator details and steps to reproduce.
-
-## License
-
-This repository does not include an explicit license file yet. If you want others to use and contribute to this project, consider adding a LICENSE (for example, the MIT license).
-
-## Acknowledgements
-
-- Inspired by the classic Breakout and other simple mobile arcade games.
-
+The available playbooks and the actions they perform are shown plainly before you run them. By using Breakout, you acknowledge that you choose to run those actions and accept responsibility for the outcome, including data loss, device damage, or a bricked device. The author is not responsible for damage caused by your use of the program.
 
 ---
 
-If you'd like, I can:
-- Add badges (build/test/license) if you have CI set up,
-- Add a demo GIF into docs/ and reference it,
-- Tailor the README to the exact project structure and features if you point me to key files (e.g., where levels, controls, and save data live).
+## What Breakout does
+
+- Detects indicators that a device is enrolled in device management (work profile, device owner, provisioning remnants, restricted accounts/permissions).
+- Runs a variety of diagnostics to surface management/configuration state and potential persistence mechanisms.
+- Provides step-by-step playbooks to attempt removal or remediation, using Shizuku where elevated system APIs are required.
+- Shows every action the playbook will run and requests explicit confirmation before performing anything.
+
+## Notable features
+
+- Diagnostics: readable reports on accounts, device owner/profile state, permissions, installed management apps, and policy indicators.
+- Playbooks: curated sequences of actions for common locked/managed-device scenarios. Each step is explained and presented before execution.
+- Shizuku integration: when available, Breakout can use Shizuku to access privileged APIs in a safer user-mediated way; Breakout never performs hidden actions.
+- Clear warnings: explicit consent is required before any destructive or risky operation.
+
+## Security & risks (read carefully)
+
+- Breakout performs actions that can modify device state. These actions may cause data loss, disable features, or render a device unusable.
+- Always run diagnostics first and review the entire playbook before confirming any destructive steps.
+- Prefer testing on an emulator or a disposable device before using on a device you care about.
+- Breakout does not guarantee remediation for every vendor or enterprise management configuration. Some management solutions are persistent or tied to the device hardware/firmware.
+
+## Requirements
+
+- Android device or emulator
+- Android 8.0+ (see app/build.gradle.kts for exact compile/minSdk versions)
+- Optional: Shizuku installed and configured if you want playbooks that rely on its elevated APIs
+
+## Build & install
+
+From the command line:
+
+```bash
+# build a debug APK
+./gradlew assembleDebug
+
+# install to a connected device or emulator
+./gradlew installDebug
+```
+
+Or open the project in Android Studio and run the `app` module.
+
+## Permissions & manifest
+
+Before installing, review `app/src/main/AndroidManifest.xml` and the `shell/` package. The app may request permissions that allow inspection of accounts, packages, and device state. Some playbook steps require granting or enabling additional permissions.
+
+## Where to look in the code
+
+- app/src/main/java/com/ziddy/breakout/
+  - AppViewModel.kt — main app orchestration and state
+  - engine/ — diagnostic checks and remediation logic
+  - shell/ — platform integrations, permission flows, and Shizuku helpers
+  - data/ — local data storage and report persistence
+  - ui/ — screens and user interactions
+  - MainActivity.kt, BreakoutApp.kt — Android entry points
+
+## Contributing
+
+If you want to contribute:
+1. Fork the repository
+2. Create a branch (git checkout -b feat/your-feature)
+3. Implement changes and document new playbooks or diagnostics
+4. Open a Pull Request with a clear description and test instructions
+
+Please be cautious when adding playbooks that perform destructive actions — document exactly what the playbook does and which devices/configurations it targets.
+
+## Privacy & data handling
+
+- Breakout stores diagnostic reports locally. It does not transmit data to remote servers by default.
+- If you add telemetry or remote reporting, document it clearly and obtain user consent.
+
+## License
+
+No license file is present in the repository. Add a LICENSE (e.g., MIT) if you want to permit reuse and contributions under a specific license.
+
+---
+
+If this matches what you want I will keep it as the README. If you want the exact Java-string wording inserted verbatim, or want additional sections (playbook examples, screenshots, a demo GIF, or a short user-facing quickstart), tell me which and I will update the README accordingly.

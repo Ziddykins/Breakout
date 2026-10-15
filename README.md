@@ -75,11 +75,3 @@ Please be cautious when adding playbooks that perform destructive actions — do
 
 - Breakout stores diagnostic reports locally. It does not transmit data to remote servers by default.
 - If you add telemetry or remote reporting, document it clearly and obtain user consent.
-
-## License
-
-No license file is present in the repository. Add a LICENSE (e.g., MIT) if you want to permit reuse and contributions under a specific license.
-
----
-
-If this matches what you want I will keep it as the README. If you want the exact Java-string wording inserted verbatim, or want additional sections (playbook examples, screenshots, a demo GIF, or a short user-facing quickstart), tell me which and I will update the README accordingly.

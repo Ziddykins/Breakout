@@ -1,5 +1,8 @@
 # Breakout
 
+[![License: GPL v3](https://shields.io)](https://gnu.org)
+
+
 Breakout helps people buying second-hand Android devices stay secure and avoid paying for a device that is still managed, restricted, or quietly targeted. It identifies device-management threats, including devices accidentally or coercively added to corporate profiles, and provides focused removal playbooks through Shizuku. Built for clear diagnostics, informed purchases, and keeping control of your device.
 
 The available playbooks and the actions they perform are shown plainly before you run them. By using Breakout, you acknowledge that you choose to run those actions and accept responsibility for the outcome, including data loss, device damage, or a bricked device. The author is not responsible for damage caused by your use of the program.

@@ -11,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,13 +95,24 @@ import java.util.Locale
 private val scanDateFormat = SimpleDateFormat("HH:mm", Locale.US)
 
 @Composable
-fun HomeScreen(viewModel: AppViewModel) {
+fun HomeScreen(
+    viewModel: AppViewModel,
+    onPermissions: () -> Unit,
+    onPackages: () -> Unit,
+    onForensic: () -> Unit,
+    onHarden: () -> Unit,
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val shizukuState by viewModel.shizukuState.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<Threat?>(null) }
 
     val haptics = LocalHapticFeedback.current
     var wasScanning by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (state.permissionAuditReport == null && !state.isPermissionAuditScanning) {
+            viewModel.startPermissionAudit()
+        }
+    }
     LaunchedEffect(state.isScanning) {
         if (wasScanning && !state.isScanning) {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -124,6 +136,18 @@ fun HomeScreen(viewModel: AppViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    state.permissionAuditReport?.let { DeviceProfileCard(it) }
+                        ?: DeviceProfileLoadingCard(state.isPermissionAuditScanning, state.permissionAuditError)
+                }
+                item {
+                    MainActionGrid(
+                        onPermissions = onPermissions,
+                        onPackages = onPackages,
+                        onForensic = onForensic,
+                        onHarden = onHarden,
+                    )
+                }
+                item {
                     ShizukuCard(
                         state = shizukuState,
                         onGrant = viewModel::requestShizuku,
@@ -131,6 +155,7 @@ fun HomeScreen(viewModel: AppViewModel) {
                         onGuide = openGuide,
                     )
                 }
+
                 item { ScanCard(state, onScan = viewModel::startScan) }
                 if (state.threats.isEmpty() && !state.isScanning && state.lastScanAt != null) {
                     item { AllClearCard(state.usedShellForScan) }
@@ -164,6 +189,63 @@ fun HomeScreen(viewModel: AppViewModel) {
             onDismiss = { selected = null },
             onRunPlaybook = { viewModel.runPlaybook(threat.packageName) },
             onRunStep = { id -> viewModel.runSingleStep(threat.packageName, id) },
+        )
+    }
+}
+
+@Composable
+private fun DeviceProfileLoadingCard(isScanning: Boolean, error: String?) {
+    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text("DEVICE PROFILE", color = AppColors.Amber, fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                when {
+                    isScanning -> "Reading device profile…"
+                    error != null -> error
+                    else -> "Device profile is not available."
+                },
+                color = if (error != null) AppColors.Red else AppColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MainActionGrid(
+    onPermissions: () -> Unit,
+    onPackages: () -> Unit,
+    onForensic: () -> Unit,
+    onHarden: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MainActionCard("Permissions", onPermissions, Modifier.weight(1f))
+            MainActionCard("Packages", onPackages, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MainActionCard("Forensic", onForensic, Modifier.weight(1f))
+            MainActionCard("Harden", onHarden, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MainActionCard(title: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceHigh),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text(
+            title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 18.dp),
+            color = AppColors.TextPrimary,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
     }
 }

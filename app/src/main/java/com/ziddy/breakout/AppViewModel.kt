@@ -44,10 +44,18 @@ data class AppUiState(
     val isPermissionAuditScanning: Boolean = false,
     val permissionAuditReport: PermissionAuditReport? = null,
     val permissionAuditError: String? = null,
+    val permissionOperationStatus: Map<String, String> = emptyMap(),
     val isSettingsScanning: Boolean = false,
     val settingsAuditOutput: List<String> = emptyList(),
+    val deviceSettings: Map<String, Map<String, String>> = emptyMap(),
+    val settingsScanError: String? = null,
+    val settingsActionMessage: String? = null,
+    val isSettingsActionRunning: Boolean = false,
     val isPackageListing: Boolean = false,
     val packageList: List<String> = emptyList(),
+    val systemPackageList: List<String> = emptyList(),
+    val userPackageList: List<String> = emptyList(),
+    val packageListingError: String? = null,
     val packageOperationStatus: Map<String, String> = emptyMap(), // package -> pending|in_progress|success|failed
     val packageOperationProgress: Int = 0, // 0..100
 )
@@ -190,134 +198,138 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val recommendedSecure = listOf(
-        "lock_screen_allow_private_notifications" to "0",
-        "lock_screen_allow_private_notifications_when_unsecure" to "0",
-        "clipboard_show_access_notifications" to "1",
-        "face_stay_on_lock_screen" to "0",
-        "speak_password" to "0",
-        "rampart_main_switch_enabled" to "1",
-        "rampart_strict_protection_switch_enabled" to "1",
-        "rampart_blocked_adb_cmd" to "1",
-        "rampart_blocked_unknown_apps" to "1",
-        "rampart_enabled_message_guard" to "1",
-        "theft_protection_default_on" to "1",
-        "wifi_ap_smart_hotspot_connection" to "0",
-        "touch_and_hold_to_search" to "0",
+    private data class SettingsReadResult(
+        val namespaces: Map<String, Map<String, String>>,
+        val error: String? = null,
     )
 
-    private val recommendedSystem = listOf(
-        "screen_off_timeout" to "15000",
-        "nearby_scanning_enabled" to "0",
-        "direct_share" to "0",
-        "aod_mode" to "0",
-        "mcf_continuity" to "0",
-        "multi_control_enabled" to "0",
-    )
+    private suspend fun readDeviceSettings(): SettingsReadResult = withContext(Dispatchers.IO) {
+        val namespaces = linkedMapOf<String, Map<String, String>>()
+        for (namespace in listOf("secure", "system", "global")) {
+            val result = ShizukuShell.exec("settings list $namespace")
+            if (result.exitCode != 0 || result.timedOut) {
+                return@withContext SettingsReadResult(
+                    emptyMap(),
+                    result.stderr.ifBlank { result.stdout }.ifBlank {
+                        "Could not read the $namespace settings namespace."
+                    }.trim(),
+                )
+            }
+            namespaces[namespace] = result.stdout.lineSequence()
+                .mapNotNull { line ->
+                    val separator = line.indexOf('=')
+                    if (separator <= 0) null
+                    else line.substring(0, separator).trim() to line.substring(separator + 1)
+                }
+                .toMap()
+                .toSortedMap()
+        }
+        SettingsReadResult(namespaces)
+    }
 
-    private val recommendedGlobal = listOf(
-        "wifi_p2p_device_name" to "Denied",
-        "thread_enabled" to "0",
-        "wifi_display_on" to "0",
-        "heads_up_notifications_enabled" to "0",
-        "wifi_wakeup_enabled" to "0",
-        "sem_wifi_carrier_network_offload_enabled" to "0",
-        "wifi_networks_available_notification_on" to "0",
-        "wifi_scan_always_enabled" to "0",
-        "ble_scan_always_enabled" to "0",
-        "bluetooth_scan_always_enabled" to "0",
-        "activity_starts_logging_enabled" to "0",
-        "package_verifier_user_consent" to "0",
-        "upload_apk_enable" to "0",
-        "send_action_app_error" to "0",
-        "add_users_when_locked" to "0",
-        "user_switcher_enabled" to "0",
-    )
-
-    fun startSettingsAudit(
-        secureOverrides: Map<String, String> = emptyMap(),
-        systemOverrides: Map<String, String> = emptyMap(),
-        globalOverrides: Map<String, String> = emptyMap(),
-    ) {
+    fun startSettingsAudit() {
         if (_uiState.value.isSettingsScanning) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isSettingsScanning = true, settingsAuditOutput = emptyList()) }
-            val output = mutableListOf<String>()
-            withContext(Dispatchers.IO) {
-                try {
-                    // Secure
-                    output.add("Checking [SECURE] Namespace...")
-                    for ((key, expectedDefault) in recommendedSecure) {
-                        val expected = secureOverrides[key] ?: expectedDefault
-                        val res = ShizukuShell.exec("settings get secure $key")
-                        val current = res.stdout.trim()
-                        if (current != expected) {
-                            output.add("MISMATCH: secure $key was [$current]. Resetting to policy [$expected].")
-                            ShizukuShell.exec("settings put secure $key $expected")
-                        } else {
-                            output.add("SECURE: secure $key matches policy ($expected)")
-                        }
-                    }
-
-                    // System
-                    output.add("Checking [SYSTEM] Namespace...")
-                    for ((key, expectedDefault) in recommendedSystem) {
-                        val expected = systemOverrides[key] ?: expectedDefault
-                        val res = ShizukuShell.exec("settings get system $key")
-                        val current = res.stdout.trim()
-                        if (current != expected) {
-                            output.add("MISMATCH: system $key was [$current]. Resetting to policy [$expected].")
-                            ShizukuShell.exec("settings put system $key $expected")
-                        } else {
-                            output.add("SYSTEM: system $key matches policy ($expected)")
-                        }
-                    }
-
-                    // Global
-                    output.add("Checking [GLOBAL] Namespace...")
-                    for ((key, expectedDefault) in recommendedGlobal) {
-                        val expected = globalOverrides[key] ?: expectedDefault
-                        val res = ShizukuShell.exec("settings get global $key")
-                        val current = res.stdout.trim()
-                        if (current != expected) {
-                            output.add("MISMATCH: global $key was [$current]. Resetting to policy [$expected].")
-                            ShizukuShell.exec("settings put global $key $expected")
-                        } else {
-                            output.add("GLOBAL: global $key matches policy ($expected)")
-                        }
-                    }
-                } catch (e: Exception) {
-                    output.add("Settings audit failed: ${'$'}{e.message}")
-                }
+            _uiState.update { it.copy(isSettingsScanning = true, settingsScanError = null) }
+            val result = readDeviceSettings()
+            _uiState.update {
+                it.copy(
+                    isSettingsScanning = false,
+                    deviceSettings = result.namespaces,
+                    settingsScanError = result.error,
+                    settingsActionMessage = null,
+                )
             }
-            _uiState.update { it.copy(isSettingsScanning = false, settingsAuditOutput = output) }
         }
     }
 
-    fun resetSettingsToRecommended() {
-        viewModelScope.launch(Dispatchers.IO) {
-            for ((key, value) in recommendedSecure) {
-                ShizukuShell.exec("settings put secure $key $value")
+    fun applyDeviceSetting(namespace: String, key: String, value: String) {
+        val allowedNamespaces = setOf("secure", "system", "global")
+        if (namespace !in allowedNamespaces ||
+            !key.matches(Regex("[A-Za-z0-9_]+")) ||
+            !value.matches(Regex("[A-Za-z0-9_.-]+")) ||
+            key !in _uiState.value.deviceSettings[namespace].orEmpty()
+        ) {
+            _uiState.update {
+                it.copy(settingsActionMessage = "Setting was not changed: it is not in the current device settings list.")
             }
-            for ((key, value) in recommendedSystem) {
-                ShizukuShell.exec("settings put system $key $value")
+            return
+        }
+        if (_uiState.value.isSettingsActionRunning) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSettingsActionRunning = true, settingsActionMessage = null) }
+            val result = withContext(Dispatchers.IO) {
+                ShizukuShell.exec("settings put $namespace $key $value")
             }
-            for ((key, value) in recommendedGlobal) {
-                ShizukuShell.exec("settings put global $key $value")
+            if (result.exitCode != 0 || result.timedOut) {
+                _uiState.update {
+                    it.copy(
+                        isSettingsActionRunning = false,
+                        settingsActionMessage = result.stderr.ifBlank { result.stdout }
+                            .ifBlank { "Android rejected the change to $namespace.$key." }.trim(),
+                    )
+                }
+            } else {
+                val refreshed = readDeviceSettings()
+                _uiState.update {
+                    it.copy(
+                        isSettingsActionRunning = false,
+                        deviceSettings = refreshed.namespaces,
+                        settingsScanError = refreshed.error,
+                        settingsActionMessage = if (refreshed.error == null) {
+                            "Applied $namespace.$key = $value"
+                        } else {
+                            "Change sent, but settings could not be refreshed: ${refreshed.error}"
+                        },
+                    )
+                }
             }
-            _uiState.update { it.copy(settingsAuditOutput = listOf("Settings reset to recommended values.")) }
         }
     }
 
     fun listPackages() {
         if (_uiState.value.isPackageListing) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isPackageListing = true, packageList = emptyList()) }
-            val packages = withContext(Dispatchers.IO) {
-                val res = ShizukuShell.exec("pm list packages")
-                res.stdout.lines().map { it.removePrefix("package:").trim() }.filter { it.isNotEmpty() }
+            _uiState.update {
+                it.copy(
+                    isPackageListing = true,
+                    packageList = emptyList(),
+                    systemPackageList = emptyList(),
+                    userPackageList = emptyList(),
+                    packageListingError = null,
+                )
             }
-            _uiState.update { it.copy(isPackageListing = false, packageList = packages) }
+            val result = withContext(Dispatchers.IO) {
+                val systemResult = ShizukuShell.exec("pm list packages -s")
+                val userResult = ShizukuShell.exec("pm list packages -3")
+                val failure = listOf(systemResult, userResult).firstOrNull {
+                    it.exitCode != 0 || it.timedOut
+                }
+                if (failure != null) {
+                    Result.failure(IllegalStateException(failure.stderr.ifBlank { "Package listing failed." }))
+                } else {
+                    fun parsePackages(output: String) = output.lines()
+                        .map { it.removePrefix("package:").trim() }
+                        .filter { it.isNotEmpty() }
+                        .distinct()
+                        .sorted()
+
+                    Result.success(
+                        parsePackages(systemResult.stdout) to parsePackages(userResult.stdout),
+                    )
+                }
+            }
+            _uiState.update { state ->
+                val packageGroups = result.getOrNull()
+                state.copy(
+                    isPackageListing = false,
+                    packageList = packageGroups?.let { (system, user) -> (system + user).distinct().sorted() }
+                        ?: emptyList(),
+                    systemPackageList = packageGroups?.first ?: emptyList(),
+                    userPackageList = packageGroups?.second ?: emptyList(),
+                    packageListingError = result.exceptionOrNull()?.message,
+                )
+            }
         }
     }
 
@@ -392,6 +404,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         isPermissionAuditScanning = false,
                         permissionAuditReport = report,
+                        permissionOperationStatus = it.permissionOperationStatus.mapValues { (_, status) ->
+                            if (status == "in_progress") "Changed; audit refreshed." else status
+                        },
                     )
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -401,8 +416,53 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         isPermissionAuditScanning = false,
                         permissionAuditError = error.message ?: "Permission audit failed.",
+                        permissionOperationStatus = it.permissionOperationStatus.mapValues { (_, status) ->
+                            if (status == "in_progress") "Changed; audit refresh failed." else status
+                        },
                     )
                 }
+            }
+        }
+    }
+
+    fun setPermissionGranted(packageName: String, permissionName: String, granted: Boolean) {
+        val validPackage = packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))
+        val validPermission = permissionName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))
+        val finding = _uiState.value.permissionAuditReport?.findings
+            ?.firstOrNull { it.packageName == packageName }
+        val permissionFound = finding?.permissions?.any { it.name == permissionName } == true
+        if (!validPackage || !validPermission || !permissionFound) {
+            _uiState.update {
+                it.copy(permissionOperationStatus = it.permissionOperationStatus + (
+                    "$packageName|$permissionName" to "Permission is not part of the current audit results."
+                ))
+            }
+            return
+        }
+
+        val operationKey = "$packageName|$permissionName"
+        if (_uiState.value.isPermissionAuditScanning ||
+            _uiState.value.permissionOperationStatus[operationKey] == "in_progress"
+        ) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(permissionOperationStatus = it.permissionOperationStatus + (operationKey to "in_progress"))
+            }
+            val action = if (granted) "grant" else "revoke"
+            val result = withContext(Dispatchers.IO) {
+                ShizukuShell.exec("pm $action --user 0 $packageName $permissionName")
+            }
+            if (result.exitCode != 0 || result.timedOut) {
+                val details = result.stderr.ifBlank { result.stdout }
+                    .ifBlank { "Android rejected the $action request." }.trim()
+                _uiState.update {
+                    it.copy(
+                        permissionOperationStatus = it.permissionOperationStatus +
+                            (operationKey to "Could not $action: $details"),
+                    )
+                }
+            } else {
+                startPermissionAudit()
             }
         }
     }

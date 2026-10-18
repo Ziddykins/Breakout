@@ -24,6 +24,8 @@ The available playbooks and the actions they perform are shown plainly before yo
 ## Notable features
 
 - Diagnostics: readable reports on accounts, device owner/profile state, permissions, installed management apps, and policy indicators.
+- Permissions: review sensitive requested permissions and try Android grant/revoke commands through Shizuku. Android may reject signature-protected, fixed, or special permissions; changing a runtime permission does not require repackaging the APK.
+- Harden: reads the device's actual `settings list` namespaces and shows recommendations only for recognized keys present on that device. Changes are individually applied rather than bulk-applied.
 - Playbooks: curated sequences of actions for common locked/managed-device scenarios. Each step is explained and presented before execution.
 - Shizuku integration: when available, Breakout can use Shizuku to access privileged APIs in a safer user-mediated way; Breakout never performs hidden actions.
 - Clear warnings: explicit consent is required before any destructive or risky operation.

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -23,11 +25,15 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,8 +59,16 @@ fun PackagesScreen(viewModel: AppViewModel) {
 	val selected = remember { mutableStateListOf<String>() }
 	var query by remember { mutableStateOf("") }
 	var showConfirm by remember { mutableStateOf(false) }
+	val expandedSections = remember { mutableStateMapOf<String, Boolean>() }
+	val expandedVendors = remember { mutableStateMapOf<String, Boolean>() }
 	val snackbarHostState = remember { SnackbarHostState() }
 	val scope = rememberCoroutineScope()
+	val filteredSystemPackages = remember(state.systemPackageList, query) {
+		filterPackagesByVendor(state.systemPackageList, query)
+	}
+	val filteredUserPackages = remember(state.userPackageList, query) {
+		filterPackagesByVendor(state.userPackageList, query)
+	}
 
 	Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
 		Column(Modifier.fillMaxSize()) {
@@ -91,16 +105,21 @@ fun PackagesScreen(viewModel: AppViewModel) {
 							Text("Installed packages")
 							OutlinedTextField(
 								value = query,
-								onValueChange = { query = it },
+								onValueChange = {
+									query = it
+									expandedVendors.clear()
+									expandedSections.keys.forEach { section -> expandedSections[section] = true }
+								},
 								label = { Text("Filter packages") },
 								modifier = Modifier.fillMaxWidth(),
 							)
 							Text("Select packages to disable or clear cache.", color = AppColors.TextSecondary)
+							state.packageListingError?.let { error ->
+								Text("Could not load packages: $error", color = AppColors.Red)
+							}
 						}
 					}
 				}
-
-				val filtered = if (query.isBlank()) state.packageList else state.packageList.filter { it.contains(query, ignoreCase = true) }
 
 				val hasSamsung = state.packageList.any { it.startsWith("com.samsung") }
 				if (hasSamsung) {
@@ -128,31 +147,53 @@ fun PackagesScreen(viewModel: AppViewModel) {
 					}
 				}
 
-				items(filtered) { pkg ->
-					val status = state.packageOperationStatus[pkg]
-					Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-						Checkbox(checked = selected.contains(pkg), onCheckedChange = {
-							if (it) selected.add(pkg) else selected.remove(pkg)
-						})
-						Spacer(modifier = Modifier.size(8.dp))
-						val annotated = buildAnnotatedString {
-							if (query.isNotBlank()) {
-								val idx = pkg.indexOf(query, ignoreCase = true)
-								if (idx >= 0) {
-									append(pkg.substring(0, idx))
-									withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) { append(pkg.substring(idx, idx + query.length)) }
-									append(pkg.substring(idx + query.length))
-								} else append(pkg)
-							} else append(pkg)
+				listOf(
+					"System apps" to filteredSystemPackages,
+					"User apps" to filteredUserPackages,
+				).forEach { (sectionName, vendors) ->
+					if (vendors.isNotEmpty()) {
+						val sectionKey = sectionName
+						val sectionExpanded = expandedSections[sectionKey] ?: true
+						item(key = "section:$sectionKey") {
+							PackageGroupHeader(
+								title = sectionName,
+								count = vendors.values.sumOf { it.size },
+								expanded = sectionExpanded,
+								onClick = { expandedSections[sectionKey] = !sectionExpanded },
+								level = 0,
+							)
 						}
-						Text(annotated, modifier = Modifier.weight(1f))
-						Spacer(modifier = Modifier.size(8.dp))
-						when (status) {
-							"in_progress" -> Text("…", color = AppColors.Amber)
-							"success" -> Text("✓", color = Color(0xFF4CAF50))
-							"failed" -> Text("✕", color = Color(0xFFF44336))
-							else -> {
-								Button(onClick = { viewModel.disablePackages(listOf(pkg)) }) { Text("Disable") }
+
+						if (sectionExpanded) {
+							vendors.forEach { (vendor, packages) ->
+								val vendorKey = "$sectionKey:$vendor"
+								val vendorExpanded = expandedVendors[vendorKey] ?: query.isNotBlank()
+								item(key = "vendor:$vendorKey") {
+									PackageGroupHeader(
+										title = vendor,
+										count = packages.size,
+										expanded = vendorExpanded,
+										onClick = { expandedVendors[vendorKey] = !vendorExpanded },
+										level = 1,
+									)
+								}
+
+								if (vendorExpanded) {
+									items(packages, key = { "package:$it" }) { pkg ->
+										PackageRow(
+											pkg = pkg,
+											query = query,
+											selected = selected.contains(pkg),
+											status = state.packageOperationStatus[pkg],
+											onSelectedChange = { checked ->
+												if (checked) {
+													if (!selected.contains(pkg)) selected.add(pkg)
+												} else selected.remove(pkg)
+											},
+											onDisable = { viewModel.disablePackages(listOf(pkg)) },
+										)
+									}
+								}
 							}
 						}
 					}
@@ -188,5 +229,110 @@ fun PackagesScreen(viewModel: AppViewModel) {
 				)
 			}
 		}
+	}
+}
+
+@Composable
+private fun PackageGroupHeader(
+	title: String,
+	count: Int,
+	expanded: Boolean,
+	onClick: () -> Unit,
+	level: Int,
+) {
+	Surface(
+		modifier = Modifier
+			.fillMaxWidth()
+			.padding(start = (level * 16).dp)
+			.clickable(onClick = onClick),
+		shape = RoundedCornerShape(8.dp),
+		color = if (level == 0) AppColors.Surface else AppColors.Surface.copy(alpha = 0.7f),
+	) {
+		Row(
+			Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+			verticalAlignment = Alignment.CenterVertically,
+		) {
+			Text(
+				title,
+				modifier = Modifier.weight(1f),
+				color = AppColors.TextPrimary,
+				style = if (level == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+				fontWeight = FontWeight.SemiBold,
+			)
+			Text("$count", color = AppColors.TextSecondary)
+			Icon(
+				imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+				contentDescription = if (expanded) "Collapse $title" else "Expand $title",
+				tint = AppColors.TextSecondary,
+				modifier = Modifier.padding(start = 8.dp),
+			)
+		}
+	}
+}
+
+@Composable
+private fun PackageRow(
+	pkg: String,
+	query: String,
+	selected: Boolean,
+	status: String?,
+	onSelectedChange: (Boolean) -> Unit,
+	onDisable: () -> Unit,
+) {
+	Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+		Checkbox(checked = selected, onCheckedChange = onSelectedChange)
+		Spacer(modifier = Modifier.size(8.dp))
+		val annotated = buildAnnotatedString {
+			if (query.isNotBlank()) {
+				val idx = pkg.indexOf(query, ignoreCase = true)
+				if (idx >= 0) {
+					append(pkg.substring(0, idx))
+					withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+						append(pkg.substring(idx, idx + query.length))
+					}
+					append(pkg.substring(idx + query.length))
+				} else append(pkg)
+			} else append(pkg)
+		}
+		Text(annotated, modifier = Modifier.weight(1f))
+		Spacer(modifier = Modifier.size(8.dp))
+		when (status) {
+			"in_progress" -> Text("…", color = AppColors.Amber)
+			"success" -> Text("✓", color = Color(0xFF4CAF50))
+			"failed" -> Text("✕", color = Color(0xFFF44336))
+			else -> Button(onClick = onDisable) { Text("Disable") }
+		}
+	}
+}
+
+private fun filterPackagesByVendor(
+	packages: List<String>,
+	query: String,
+): Map<String, List<String>> = packages
+	.asSequence()
+	.filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+	.groupBy(::packageVendor)
+	.toSortedMap()
+
+private fun packageVendor(packageName: String): String {
+	val namespace = packageName.split('.').take(2).joinToString(".")
+	return when (namespace) {
+		"com.android" -> "Android"
+		"com.google" -> "Google"
+		"com.samsung", "com.sec" -> "Samsung"
+		"com.qualcomm" -> "Qualcomm"
+		"com.miui", "com.xiaomi" -> "Xiaomi"
+		"com.oplus" -> "OPPO"
+		"com.oneplus" -> "OnePlus"
+		"com.huawei" -> "Huawei"
+		"com.honor" -> "Honor"
+		"com.motorola" -> "Motorola"
+		"com.lge" -> "LG"
+		"com.sony", "com.sonyericsson" -> "Sony"
+		"com.mediatek" -> "MediaTek"
+		"com.microsoft" -> "Microsoft"
+		"com.facebook", "com.instagram", "com.whatsapp" -> "Meta"
+		else -> namespace.split('.').lastOrNull()?.replaceFirstChar { it.uppercase() }
+			?: "Other"
 	}
 }

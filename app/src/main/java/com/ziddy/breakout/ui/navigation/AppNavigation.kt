@@ -2,11 +2,8 @@ package com.ziddy.breakout.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Radar
-import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
@@ -17,9 +14,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -43,19 +37,18 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 @Composable
 fun AppNavigation(viewModel: AppViewModel = viewModel()) {
     val navController = rememberNavController()
-    var developerUnlocked by remember { mutableStateOf(false) }
-    val tabs = buildList {
-        add(Tab("scan", "Scan", Icons.Rounded.Radar))
-        add(Tab("permissions", "Permissions", Icons.Rounded.Key))
-        add(Tab("settings", "Settings", Icons.Rounded.Settings))
-        add(Tab("packages", "Packages", Icons.Rounded.Code))
-        add(Tab("forensic", "Forensic", Icons.Rounded.Security))
-        add(Tab("console", "Console", Icons.Rounded.Terminal))
-        add(Tab("about", "About", Icons.Rounded.Info))
-        if (developerUnlocked) add(Tab("developer", "Dev", Icons.Rounded.Code))
-    }
+    val tabs = listOf(
+        Tab("main", "Main", Icons.Rounded.Home),
+        Tab("console", "Console", Icons.Rounded.Terminal),
+        Tab("settings", "Settings", Icons.Rounded.Settings),
+        Tab("about", "About", Icons.Rounded.Info),
+    )
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+    val selectedTabRoute = when (currentRoute) {
+        "permissions", "packages", "forensic" -> "main"
+        else -> currentRoute
+    }
 
     Scaffold(
         containerColor = AppColors.Background,
@@ -63,10 +56,10 @@ fun AppNavigation(viewModel: AppViewModel = viewModel()) {
             NavigationBar(containerColor = AppColors.Surface) {
                 for (tab in tabs) {
                     NavigationBarItem(
-                        selected = currentRoute == tab.route,
+                        selected = selectedTabRoute == tab.route,
                         onClick = {
                             navController.navigate(tab.route) {
-                                popUpTo("scan") { saveState = true }
+                                popUpTo("main") { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
@@ -87,10 +80,18 @@ fun AppNavigation(viewModel: AppViewModel = viewModel()) {
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = "scan",
+            startDestination = "main",
             modifier = Modifier.padding(padding),
         ) {
-            composable("scan") { HomeScreen(viewModel) }
+            composable("main") {
+                HomeScreen(
+                    viewModel = viewModel,
+                    onPermissions = { navController.navigate("permissions") },
+                    onPackages = { navController.navigate("packages") },
+                    onForensic = { navController.navigate("forensic") },
+                    onHarden = { navController.navigate("settings") },
+                )
+            }
             composable("permissions") { PermissionAuditScreen(viewModel) }
             composable("settings") { SettingsAuditScreen(viewModel) }
             composable("packages") { PackagesScreen(viewModel) }
@@ -99,7 +100,7 @@ fun AppNavigation(viewModel: AppViewModel = viewModel()) {
             composable("about") {
                 AboutScreen(
                     onDeveloperUnlock = {
-                        developerUnlocked = true
+                        navController.navigate("developer")
                     },
                 )
             }

@@ -1,5 +1,6 @@
 package com.ziddy.breakout.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
@@ -18,8 +22,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,104 +34,47 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ziddy.breakout.AppViewModel
 import com.ziddy.breakout.ui.theme.AppColors
 import com.ziddy.breakout.ui.theme.Mono
 
-@Composable
-fun SettingsAuditScreen(viewModel: AppViewModel) {
-	val state by viewModel.uiState.collectAsStateWithLifecycle()
-
-	// Local recommended defaults mirrored from ViewModel
-	val secure = listOf(
+private val hardeningRecommendations = mapOf(
+	"secure" to mapOf(
 		"lock_screen_allow_private_notifications" to "0",
 		"lock_screen_allow_private_notifications_when_unsecure" to "0",
-		"clipboard_show_access_notifications" to "1",
-		"face_stay_on_lock_screen" to "0",
 		"speak_password" to "0",
+		"add_users_when_locked" to "0",
 		"rampart_main_switch_enabled" to "1",
 		"rampart_strict_protection_switch_enabled" to "1",
 		"rampart_blocked_adb_cmd" to "1",
 		"rampart_blocked_unknown_apps" to "1",
 		"rampart_enabled_message_guard" to "1",
 		"theft_protection_default_on" to "1",
-		"wifi_ap_smart_hotspot_connection" to "0",
-		"touch_and_hold_to_search" to "0",
-	)
-
-	val system = listOf(
-		"screen_off_timeout" to "15000",
-		"nearby_scanning_enabled" to "0",
-		"direct_share" to "0",
-		"aod_mode" to "0",
-		"mcf_continuity" to "0",
-		"multi_control_enabled" to "0",
-	)
-
-	val global = listOf(
-		"wifi_p2p_device_name" to "Denied",
-		"thread_enabled" to "0",
-		"wifi_display_on" to "0",
-		"heads_up_notifications_enabled" to "0",
-		"wifi_wakeup_enabled" to "0",
-		"sem_wifi_carrier_network_offload_enabled" to "0",
-		"wifi_networks_available_notification_on" to "0",
+	),
+	"system" to emptyMap(),
+	"global" to mapOf(
+		"add_users_when_locked" to "0",
 		"wifi_scan_always_enabled" to "0",
 		"ble_scan_always_enabled" to "0",
 		"bluetooth_scan_always_enabled" to "0",
-		"activity_starts_logging_enabled" to "0",
-		"package_verifier_user_consent" to "0",
-		"upload_apk_enable" to "0",
-		"send_action_app_error" to "0",
-		"add_users_when_locked" to "0",
-		"user_switcher_enabled" to "0",
-	)
+	),
+)
 
-	// Editable state
-	val secureState = remember { mutableStateMapOf<String, String>().apply { secure.forEach { put(it.first, it.second) } } }
-	val systemState = remember { mutableStateMapOf<String, String>().apply { system.forEach { put(it.first, it.second) } } }
-	val globalState = remember { mutableStateMapOf<String, String>().apply { global.forEach { put(it.first, it.second) } } }
+@Composable
+fun SettingsAuditScreen(viewModel: AppViewModel) {
+	val state by viewModel.uiState.collectAsStateWithLifecycle()
+	var query by remember { mutableStateOf("") }
+	val expandedNamespaces = remember { mutableStateMapOf<String, Boolean>() }
 
-	// Short descriptions for settings
-	val descriptions = mapOf(
-		"lock_screen_allow_private_notifications" to "Allow private content to show on lock screen (recommended: 0).",
-		"lock_screen_allow_private_notifications_when_unsecure" to "Allow private notifications when device is not secure.",
-		"clipboard_show_access_notifications" to "Show notifications when apps access the clipboard.",
-		"face_stay_on_lock_screen" to "Keep face unlock active on the lock screen.",
-		"speak_password" to "Speak password aloud for accessibility (disable for security).",
-		"rampart_main_switch_enabled" to "Samsung Rampart security main switch.",
-		"rampart_strict_protection_switch_enabled" to "Enable strict protection in Rampart.",
-		"rampart_blocked_adb_cmd" to "Block certain ADB commands for security.",
-		"rampart_blocked_unknown_apps" to "Block unknown apps via Rampart.",
-		"rampart_enabled_message_guard" to "Enable message guard to protect messages.",
-		"theft_protection_default_on" to "Default theft protection state.",
-		"wifi_ap_smart_hotspot_connection" to "Control smart hotspot connection behavior.",
-		"touch_and_hold_to_search" to "Trigger search with touch-and-hold gesture.",
-		"screen_off_timeout" to "Screen timeout in milliseconds.",
-		"nearby_scanning_enabled" to "Allow nearby device scanning.",
-		"direct_share" to "Enable direct share targets.",
-		"aod_mode" to "Always-on display mode.",
-		"mcf_continuity" to "Samsung multi-control continuity feature.",
-		"multi_control_enabled" to "Allow multi-control features.",
-		"wifi_p2p_device_name" to "Wi-Fi P2P device name / policy.",
-		"thread_enabled" to "Thread networking enabled.",
-		"wifi_display_on" to "Wi-Fi display / Miracast enablement.",
-		"heads_up_notifications_enabled" to "Heads-up notifications enablement.",
-		"wifi_wakeup_enabled" to "Allow Wi-Fi to wake device for networks.",
-		"sem_wifi_carrier_network_offload_enabled" to "Carrier offload for Wi-Fi networks.",
-		"wifi_networks_available_notification_on" to "Notify when Wi-Fi networks are available.",
-		"wifi_scan_always_enabled" to "Allow background Wi-Fi scanning.",
-		"ble_scan_always_enabled" to "Allow background BLE scanning.",
-		"bluetooth_scan_always_enabled" to "Allow background Bluetooth scanning.",
-		"activity_starts_logging_enabled" to "Log activity starts.",
-		"package_verifier_user_consent" to "Package verifier user consent setting.",
-		"upload_apk_enable" to "Allow APK uploads.",
-		"send_action_app_error" to "Send app error actions.",
-		"add_users_when_locked" to "Allow adding new users when device locked.",
-		"user_switcher_enabled" to "Enable user switcher UI.",
-	)
+	LaunchedEffect(Unit) {
+		if (state.deviceSettings.isEmpty() && !state.isSettingsScanning) {
+			viewModel.startSettingsAudit()
+		}
+	}
 
 	Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
 		Column(Modifier.fillMaxSize()) {
@@ -140,105 +86,181 @@ fun SettingsAuditScreen(viewModel: AppViewModel) {
 			) {
 				Icon(Icons.Rounded.Settings, contentDescription = null, tint = AppColors.Amber)
 				Spacer(modifier = Modifier.size(8.dp))
-				Text("SETTINGS AUDIT", color = AppColors.TextPrimary, fontFamily = Mono)
+				Text("HARDEN", color = AppColors.TextPrimary, fontFamily = Mono)
 				Spacer(modifier = Modifier.weight(1f))
-				IconButton(onClick = { viewModel.startSettingsAudit() }, enabled = !state.isSettingsScanning) {
-					Icon(Icons.Rounded.Refresh, contentDescription = "Run settings audit")
+				IconButton(onClick = viewModel::startSettingsAudit, enabled = !state.isSettingsScanning) {
+					Icon(Icons.Rounded.Refresh, contentDescription = "Refresh device settings")
 				}
 			}
 
 			LazyColumn(
 				modifier = Modifier.fillMaxSize(),
 				contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-				verticalArrangement = Arrangement.spacedBy(12.dp),
+				verticalArrangement = Arrangement.spacedBy(10.dp),
 			) {
 				item {
 					Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface)) {
-						Column(Modifier.padding(12.dp)) {
-							Text("SECURE NAMESPACE", fontFamily = Mono)
-							secure.forEach { (key, recommended) ->
-								Column(Modifier.padding(top = 8.dp)) {
-									OutlinedTextField(
-										value = secureState[key] ?: recommended,
-										onValueChange = { secureState[key] = it },
-										label = { Text(key) },
-										modifier = Modifier.fillMaxWidth(),
-									)
-									Text("Recommended: $recommended", color = AppColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-									Text(descriptions[key] ?: "", color = AppColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-								}
+						Column(Modifier.padding(14.dp)) {
+							Text("Device-specific settings", fontWeight = FontWeight.Bold)
+							Text(
+								"Breakout reads the settings keys actually exposed on this device. Only recognized hardening recommendations can be applied; other discovered values remain read-only.",
+								color = AppColors.TextSecondary,
+								fontSize = 12.sp,
+								modifier = Modifier.padding(top = 5.dp),
+							)
+							if (state.isSettingsScanning) {
+								LinearProgressIndicator(
+									modifier = Modifier
+										.fillMaxWidth()
+										.padding(top = 10.dp),
+								)
+							}
+							state.settingsScanError?.let { error ->
+								Text(error, color = AppColors.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+							}
+							state.settingsActionMessage?.let { message ->
+								Text(
+									message,
+									color = if (message.contains("not changed", ignoreCase = true) ||
+										message.contains("rejected", ignoreCase = true) ||
+										message.contains("could not", ignoreCase = true)
+									) AppColors.Red else AppColors.Amber,
+									fontSize = 12.sp,
+									modifier = Modifier.padding(top = 8.dp),
+								)
+							}
+							androidx.compose.material3.OutlinedTextField(
+								value = query,
+								onValueChange = {
+									query = it
+									expandedNamespaces.clear()
+								},
+								label = { Text("Filter settings") },
+								modifier = Modifier
+									.fillMaxWidth()
+									.padding(top = 8.dp),
+								singleLine = true,
+							)
+						}
+					}
+				}
+
+				listOf("secure", "system", "global").forEach { namespace ->
+					val allSettings = state.deviceSettings[namespace].orEmpty()
+					val settings = allSettings.filter { (key, value) ->
+						query.isBlank() ||
+							key.contains(query, ignoreCase = true) ||
+							value.contains(query, ignoreCase = true)
+					}
+					if (settings.isNotEmpty()) {
+						val expanded = expandedNamespaces[namespace] ?: query.isNotBlank()
+						item(key = "namespace:$namespace") {
+							NamespaceHeader(
+								namespace = namespace,
+								count = settings.size,
+								expanded = expanded,
+								onClick = { expandedNamespaces[namespace] = !expanded },
+							)
+						}
+						if (expanded) {
+							items(settings.toList(), key = { "$namespace:${it.first}" }) { (key, value) ->
+								val recommended = hardeningRecommendations[namespace]?.get(key)
+								SettingRow(
+									namespace = namespace,
+									key = key,
+									value = value,
+									recommendedValue = recommended,
+									isApplying = state.isSettingsActionRunning,
+									onApply = { viewModel.applyDeviceSetting(namespace, key, recommended.orEmpty()) },
+								)
 							}
 						}
 					}
 				}
 
-				item {
-					Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface)) {
-						Column(Modifier.padding(12.dp)) {
-							Text("SYSTEM NAMESPACE", fontFamily = Mono)
-							system.forEach { (key, recommended) ->
-								Column(Modifier.padding(top = 8.dp)) {
-									OutlinedTextField(
-										value = systemState[key] ?: recommended,
-										onValueChange = { systemState[key] = it },
-										label = { Text(key) },
-										modifier = Modifier.fillMaxWidth(),
-									)
-									Text("Recommended: $recommended", color = AppColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-								}
-							}
-						}
+				if (!state.isSettingsScanning && state.settingsScanError == null &&
+					state.deviceSettings.values.all { it.isEmpty() }
+				) {
+					item {
+						Text(
+							"No settings were returned. Start Shizuku and refresh to read this device's settings namespaces.",
+							color = AppColors.TextSecondary,
+							modifier = Modifier.padding(8.dp),
+						)
 					}
 				}
+			}
+		}
+	}
+}
 
-				item {
-					Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface)) {
-						Column(Modifier.padding(12.dp)) {
-							Text("GLOBAL NAMESPACE", fontFamily = Mono)
-							global.forEach { (key, recommended) ->
-								Column(Modifier.padding(top = 8.dp)) {
-									OutlinedTextField(
-										value = globalState[key] ?: recommended,
-										onValueChange = { globalState[key] = it },
-										label = { Text(key) },
-										modifier = Modifier.fillMaxWidth(),
-									)
-									Text("Recommended: $recommended", color = AppColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-								}
-							}
-						}
-					}
-				}
+@Composable
+private fun NamespaceHeader(
+	namespace: String,
+	count: Int,
+	expanded: Boolean,
+	onClick: () -> Unit,
+) {
+	Surface(
+		modifier = Modifier
+			.fillMaxWidth()
+			.clickable(onClick = onClick),
+		shape = RoundedCornerShape(10.dp),
+		color = AppColors.Surface,
+	) {
+		Row(
+			Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+			verticalAlignment = Alignment.CenterVertically,
+		) {
+			Text(
+				"${namespace.uppercase()} NAMESPACE",
+				modifier = Modifier.weight(1f),
+				color = AppColors.Amber,
+				fontFamily = Mono,
+				fontSize = 11.sp,
+				fontWeight = FontWeight.Bold,
+			)
+			Text("$count settings", color = AppColors.TextSecondary, fontSize = 11.sp)
+			Icon(
+				if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+				contentDescription = if (expanded) "Collapse $namespace settings" else "Expand $namespace settings",
+				tint = AppColors.TextSecondary,
+				modifier = Modifier.padding(start = 8.dp),
+			)
+		}
+	}
+}
 
-				item {
-					Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-						Button(onClick = {
-							// reset local states to recommended
-							secure.forEach { secureState[it.first] = it.second }
-							system.forEach { systemState[it.first] = it.second }
-							global.forEach { globalState[it.first] = it.second }
-							viewModel.resetSettingsToRecommended()
-						}) {
-							Text("Reset")
-						}
-						Spacer(modifier = Modifier.size(8.dp))
-						Button(onClick = {
-							viewModel.startSettingsAudit(secureState.toMap(), systemState.toMap(), globalState.toMap())
-						}) {
-							Text("Scan")
-						}
+@Composable
+private fun SettingRow(
+	namespace: String,
+	key: String,
+	value: String,
+	recommendedValue: String?,
+	isApplying: Boolean,
+	onApply: () -> Unit,
+) {
+	Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface)) {
+		Column(Modifier.padding(12.dp)) {
+			Text(key, color = AppColors.TextPrimary, fontFamily = Mono, fontSize = 12.sp)
+			Text("Current: ${value.ifBlank { "(empty)" }}", color = AppColors.TextSecondary, fontSize = 12.sp)
+			if (recommendedValue != null) {
+				Text(
+					"Security recommendation: $recommendedValue",
+					color = AppColors.Green,
+					fontSize = 11.sp,
+					modifier = Modifier.padding(top = 4.dp),
+				)
+				if (value != recommendedValue) {
+					Button(
+						onClick = onApply,
+						enabled = !isApplying,
+						modifier = Modifier.padding(top = 6.dp),
+					) {
+						Text("Apply recommendation")
 					}
-				}
-
-				item {
-					Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface)) {
-						Column(Modifier.padding(12.dp)) {
-							Text("Output", fontFamily = Mono)
-							(state.settingsAuditOutput).forEach { line ->
-								Text(line, color = AppColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-							}
-						}
-					}
+				} else {
+					Text("Already matches", color = AppColors.Green, fontSize = 11.sp)
 				}
 			}
 		}

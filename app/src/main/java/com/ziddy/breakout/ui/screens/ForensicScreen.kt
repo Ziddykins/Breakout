@@ -18,8 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +37,8 @@ import com.ziddy.breakout.AppViewModel
 import com.ziddy.breakout.model.ForensicReport
 import com.ziddy.breakout.model.ForensicUser
 import com.ziddy.breakout.model.ShizukuState
+import com.ziddy.breakout.ui.components.AmberOutlineButton
+import com.ziddy.breakout.ui.components.ScreenHeader
 import com.ziddy.breakout.ui.theme.AppColors
 import com.ziddy.breakout.ui.theme.Mono
 
@@ -46,6 +46,7 @@ import com.ziddy.breakout.ui.theme.Mono
 fun ForensicScreen(viewModel: AppViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val shizukuState by viewModel.shizukuState.collectAsStateWithLifecycle()
+    val shizukuError by viewModel.shizukuError.collectAsStateWithLifecycle()
     val report = state.forensicReport
 
     LaunchedEffect(shizukuState, report, state.isForensicScanning) {
@@ -62,33 +63,38 @@ fun ForensicScreen(viewModel: AppViewModel) {
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 14.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Security, contentDescription = null, tint = AppColors.Amber, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("forensic", color = AppColors.TextPrimary, fontFamily = Mono, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = viewModel::startForensicScan, enabled = !state.isForensicScanning) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh forensic data", tint = AppColors.TextSecondary)
+            ScreenHeader(
+                title = "Forensic",
+                icon = Icons.Rounded.Security,
+                subtitle = "Trace control signals, users, and accounts",
+                horizontalPadding = 0.dp,
+                actions = {
+                    IconButton(
+                        onClick = viewModel::startForensicScan,
+                        enabled = !state.isForensicScanning,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = "Refresh forensic data",
+                            tint = AppColors.NeonBlue,
+                        )
                     }
-                }
-                Text("Trace control signals, users, and accounts.", color = AppColors.TextSecondary, fontSize = 14.sp)
-            }
+                },
+            )
 
             if (state.isForensicScanning) {
                 StatusSection("COLLECTING", state.forensicPhase.ifBlank { "Reading read-only system sources…" }, AppColors.Amber)
             }
 
+            SurfaceSection("DEVICE SCANNER") {
+                DeviceScannerPanel(viewModel)
+            }
+
             if (report == null) {
-                EmptyForensicState(shizukuState, onCollect = viewModel::startForensicScan)
+                EmptyForensicState(shizukuState, shizukuError, onCollect = viewModel::startForensicScan)
             } else {
                 ForensicSections(state, report)
             }
@@ -97,20 +103,24 @@ fun ForensicScreen(viewModel: AppViewModel) {
 }
 
 @Composable
-private fun EmptyForensicState(shizukuState: ShizukuState, onCollect: () -> Unit) {
+private fun EmptyForensicState(
+    shizukuState: ShizukuState,
+    shizukuError: String?,
+    onCollect: () -> Unit,
+) {
     val body = when (shizukuState) {
         ShizukuState.READY -> "Collect read-only account, profile, and device-policy data from this phone."
         ShizukuState.NO_PERMISSION -> "Shizuku is running but Breakout does not have shell permission yet."
         ShizukuState.NOT_RUNNING -> "Connect Shizuku to inspect system account and policy registries."
+        ShizukuState.CONNECTING -> "Waiting for the Shizuku shell service to connect."
+        ShizukuState.SERVICE_ERROR -> shizukuError ?: "The Shizuku shell service is unavailable."
     }
     SurfaceSection("FORENSIC COLLECTION") {
         Text(body, style = MaterialTheme.typography.bodySmall, color = AppColors.TextSecondary)
         Spacer(Modifier.size(12.dp))
-        Button(
+        AmberOutlineButton(
             onClick = onCollect,
             enabled = shizukuState == ShizukuState.READY,
-            colors = ButtonDefaults.buttonColors(containerColor = AppColors.Amber, contentColor = AppColors.Background),
-            shape = RoundedCornerShape(10.dp),
         ) {
             Text("Collect read-only data", fontWeight = FontWeight.Bold)
         }
@@ -240,7 +250,7 @@ private fun AccountActivityTableHeader() {
         listOf("ID", "Action", "Time", "UID", "Table", "Key").forEach { label ->
             Text(
                 text = label,
-                color = AppColors.Amber,
+                color = AppColors.WarningAmber,
                 fontFamily = Mono,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -315,8 +325,8 @@ private fun SurfaceSection(title: String, content: @Composable () -> Unit) {
         shape = RoundedCornerShape(16.dp),
         color = AppColors.Surface,
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, color = AppColors.Amber, fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Column(Modifier.padding(12.dp)) {
+            Text(title, color = AppColors.WarningAmber, fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(Modifier.size(8.dp))
             content()
         }

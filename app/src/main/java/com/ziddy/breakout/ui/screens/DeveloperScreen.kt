@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ziddy.breakout.R
+import com.ziddy.breakout.ui.components.ScreenHeader
 import com.ziddy.breakout.ui.theme.AppColors
 import com.ziddy.breakout.ui.theme.Mono
 
@@ -30,24 +33,14 @@ fun DeveloperScreen() {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    "developer",
-                    color = AppColors.Amber,
-                    fontFamily = Mono,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                )
-                Text("You found the hidden room.", color = AppColors.TextSecondary, fontSize = 14.sp)
-            }
+            ScreenHeader(
+                title = "Developer",
+                icon = Icons.Rounded.Code,
+                subtitle = "You found the hidden room",
+                horizontalPadding = 0.dp,
+            )
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -66,7 +59,7 @@ fun DeveloperScreen() {
                     )
                     Text(
                         "KITTY DETECTED",
-                        color = AppColors.Amber,
+                        color = AppColors.WarningAmber,
                         fontFamily = Mono,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,

@@ -117,13 +117,19 @@ object Playbook {
             detail = "Clear the app's data, caches, databases, and locally stored credentials — kills the managed account's token storage. Destructive to the app's data only.",
             command = "pm clear $pkg",
         )
-
         // ── Remove & verify ──────────────────────────────────────────────
         steps += RemovalStep(
             id = "uninstall",
             title = "Uninstall for user 0",
             detail = "Remove the package (keeping data, `-k`) for the main user. Works even for apps installed on the system image.",
             command = "pm uninstall -k --user 0 $pkg",
+        )
+        steps += RemovalStep(
+            id = "restore_user_0",
+            title = "Restore package for user 0 (conditional recovery)",
+            detail = "Only runs after a package/user-specific shell restriction is reported. Restores this already-installed package for the main user, then retries only the failed, eligible playbook commands once. This does not grant root or bypass device-owner policy.",
+            command = "pm install-existing --user 0 $pkg",
+            conditional = true,
         )
         steps += RemovalStep(
             id = "verify",
@@ -134,6 +140,34 @@ object Playbook {
 
         return steps
     }
+
+    fun needsUser0Recovery(output: String): Boolean {
+        val normalized = output.lowercase()
+        return listOf(
+            "only root can uninstall",
+            "only root may uninstall",
+            "shell cannot change component state",
+            "not installed for user",
+            "package is not installed for user",
+            "requires root",
+            "must be root",
+        ).any(normalized::contains)
+    }
+
+    fun canRetryAfterUser0Restore(stepId: String): Boolean = stepId in user0RetryableStepIds
+
+    private val user0RetryableStepIds = setOf(
+        "force_stop",
+        "disable_admin_component",
+        "appops_background",
+        "appops_boot",
+        "appops_foreground",
+        "standby_bucket",
+        "freeze",
+        "suspend",
+        "clear_data",
+        "uninstall",
+    )
 
     /** Step ids that, when failing, should surface the testOnly re-sign workaround. */
     val adminStepIds: Set<String> = setOf("remove_admin", "clear_device_owner", "clear_profile_owner")

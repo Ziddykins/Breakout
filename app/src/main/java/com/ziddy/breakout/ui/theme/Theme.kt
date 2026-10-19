@@ -15,7 +15,9 @@ object AppColors {
     val Outline = Color(0xFF2A3140)
     val TextPrimary = Color(0xFFE9ECF2)
     val TextSecondary = Color(0xFF8A93A6)
-    val Amber = Color(0xFFFFB300)
+    val NeonBlue = Color(0xFF35C8FF)
+    val Amber = NeonBlue
+    val WarningAmber = Color(0xFFFFB300)
     val Red = Color(0xFFFF5449)
     val Green = Color(0xFF3DDC84)
     val Blue = Color(0xFF4DA3FF)
@@ -23,7 +25,7 @@ object AppColors {
 
     fun forSeverity(severity: Severity): Color = when (severity) {
         Severity.CRITICAL -> Red
-        Severity.HIGH -> Amber
+        Severity.HIGH -> WarningAmber
         Severity.MEDIUM -> Blue
         Severity.LOW -> Grey
     }
@@ -32,10 +34,10 @@ object AppColors {
 val Mono: FontFamily = FontFamily.Monospace
 
 private val DarkScheme = darkColorScheme(
-    primary = AppColors.Amber,
-    onPrimary = Color(0xFF201403),
-    primaryContainer = Color(0xFF3A2C05),
-    onPrimaryContainer = Color(0xFFFFD469),
+    primary = AppColors.NeonBlue,
+    onPrimary = Color(0xFF00131D),
+    primaryContainer = Color(0xFF063247),
+    onPrimaryContainer = Color(0xFF9CEBFF),
     background = AppColors.Background,
     onBackground = AppColors.TextPrimary,
     surface = AppColors.Surface,

@@ -4,12 +4,16 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,23 +25,29 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -48,134 +58,181 @@ import com.ziddy.breakout.AppViewModel
 import com.ziddy.breakout.model.AppPermissionFinding
 import com.ziddy.breakout.model.PermissionAuditReport
 import com.ziddy.breakout.model.Severity
+import com.ziddy.breakout.model.ShizukuState
+import com.ziddy.breakout.ui.components.AmberOutlineButton
+import com.ziddy.breakout.ui.components.ScreenHeader
 import com.ziddy.breakout.ui.theme.AppColors
 import com.ziddy.breakout.ui.theme.Mono
 
 @Composable
 fun PermissionAuditScreen(viewModel: AppViewModel) {
-	val state by viewModel.uiState.collectAsStateWithLifecycle()
-	val context = LocalContext.current
-	val expandedSeverities = remember { mutableStateMapOf<Severity, Boolean>() }
-	val expandedFindings = remember { mutableStateMapOf<String, Boolean>() }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val shizukuState by viewModel.shizukuState.collectAsStateWithLifecycle()
+    val shellReady = shizukuState == ShizukuState.READY
+    val context = LocalContext.current
+    val expandedSeverities = remember { mutableStateMapOf<Severity, Boolean>() }
+    val expandedFindings = remember { mutableStateMapOf<String, Boolean>() }
+    var permissionResultMessage by remember { mutableStateOf<String?>(null) }
 
-	LaunchedEffect(Unit) {
-		if (state.permissionAuditReport == null && !state.isPermissionAuditScanning) {
-			viewModel.startPermissionAudit()
-		}
-	}
+    LaunchedEffect(viewModel) {
+        viewModel.permissionResultEvents.collect { message ->
+            permissionResultMessage = message
+        }
+    }
+    LaunchedEffect(Unit) {
+        if (state.permissionAuditReport == null && !state.isPermissionAuditScanning) {
+            viewModel.startPermissionAudit()
+        }
+    }
 
-	Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
-		Column(Modifier.fillMaxSize()) {
-			Row(
-				Modifier
-					.fillMaxWidth()
-					.padding(horizontal = 20.dp, vertical = 16.dp),
-				verticalAlignment = Alignment.CenterVertically,
-			) {
-				Icon(Icons.Rounded.Key, contentDescription = null, tint = AppColors.Amber, modifier = Modifier.size(20.dp))
-				Spacer(Modifier.size(8.dp))
-				Text("PERMISSIONS", color = AppColors.TextPrimary, fontFamily = Mono, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-				Spacer(Modifier.weight(1f))
-				IconButton(onClick = viewModel::startPermissionAudit, enabled = !state.isPermissionAuditScanning) {
-					Icon(Icons.Rounded.Refresh, contentDescription = "Refresh permission audit", tint = AppColors.TextSecondary)
-				}
-			}
+    Box(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+            Column(Modifier.fillMaxSize()) {
+                ScreenHeader(
+                    title = "Permissions",
+                    icon = Icons.Rounded.Key,
+                    subtitle = "Sensitive access audit",
+                    actions = {
+                        IconButton(
+                            onClick = viewModel::startPermissionAudit,
+                            enabled = !state.isPermissionAuditScanning,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = "Refresh permission audit",
+                                tint = AppColors.NeonBlue,
+                            )
+                        }
+                    },
+                )
 
-			LazyColumn(
-				modifier = Modifier.weight(1f),
-				contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-				verticalArrangement = Arrangement.spacedBy(12.dp),
-			) {
-				state.permissionAuditReport?.let { report ->
-					item {
-						AuditSection("AUDIT SUMMARY") {
-							Text(
-								"${report.scannedPackages} packages checked · ${report.findings.size} with listed sensitive permissions",
-								color = AppColors.TextPrimary,
-								style = MaterialTheme.typography.bodySmall,
-							)
-							Text(
-								"Requested permissions are not proof of use. Checkboxes try Android grant/revoke commands; Android may reject permissions that are signature-protected, fixed, or controlled by a special settings screen.",
-								color = AppColors.TextSecondary,
-								style = MaterialTheme.typography.bodySmall,
-								modifier = Modifier.padding(top = 6.dp),
-							)
-						}
-					}
-					for (severity in Severity.entries) {
-						val findings = report.findings.filter { it.severity == severity }
-						if (findings.isNotEmpty()) {
-							val expanded = expandedSeverities[severity] ?: true
-							item(key = "severity-${severity.name}") {
-								PermissionGroupHeader(
-									title = severity.label.uppercase(),
-									subtitle = "${findings.size} app(s)",
-									expanded = expanded,
-									tint = AppColors.forSeverity(severity),
-									onClick = { expandedSeverities[severity] = !expanded },
-								)
-							}
-							if (expanded) {
-								items(findings, key = { it.packageName }) { finding ->
-									FindingCard(
-										finding = finding,
-										expanded = expandedFindings[finding.packageName] ?: false,
-										operationStatus = state.permissionOperationStatus,
-										isAuditing = state.isPermissionAuditScanning,
-										onToggleExpanded = {
-											expandedFindings[finding.packageName] =
-												!(expandedFindings[finding.packageName] ?: false)
-										},
-										onTogglePermission = viewModel::setPermissionGranted,
-										onOpenSettings = {
-											context.startActivity(
-												Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-													data = Uri.parse("package:${finding.packageName}")
-												},
-											)
-										},
-									)
-								}
-							}
-						}
-					}
-					if (report.findings.isEmpty()) {
-						item {
-							AuditSection("NO MATCHES") {
-								Text(
-									"No installed packages requested the sensitive permissions defined by this audit on this Android version.",
-									color = AppColors.TextSecondary,
-									style = MaterialTheme.typography.bodySmall,
-								)
-							}
-						}
-					}
-				} ?: item {
-					AuditSection("PERMISSION AUDIT") {
-						when {
-							state.isPermissionAuditScanning -> Text("Reading installed-app permission declarations…", color = AppColors.Amber)
-							state.permissionAuditError != null -> Text(state.permissionAuditError.orEmpty(), color = AppColors.Red)
-							else -> Text("Start a read-only audit of installed-app permission declarations.", color = AppColors.TextSecondary)
-						}
-						Spacer(Modifier.size(10.dp))
-						Button(
-							onClick = viewModel::startPermissionAudit,
-							enabled = !state.isPermissionAuditScanning,
-							colors = ButtonDefaults.buttonColors(containerColor = AppColors.Amber, contentColor = AppColors.Background),
-							shape = RoundedCornerShape(10.dp),
-						) {
-							Text("Run audit", fontWeight = FontWeight.Bold)
-						}
-					}
-				}
-				if (state.permissionAuditError != null && state.permissionAuditReport != null) {
-					item {
-						Text(state.permissionAuditError.orEmpty(), color = AppColors.Red, style = MaterialTheme.typography.bodySmall)
-					}
-				}
-			}
-		}
-	}
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    state.permissionAuditReport?.let { report ->
+                        item {
+                            AuditSection("AUDIT SUMMARY") {
+                                Text(
+                                    "${report.scannedPackages} packages checked · ${report.findings.size} with listed sensitive permissions",
+                                    color = AppColors.TextPrimary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Text(
+                                    "Requested permissions are not proof of use. Checkboxes try Android grant/revoke commands; Android may reject permissions that are signature-protected, fixed, or controlled by a special settings screen.",
+                                    color = AppColors.TextSecondary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
+                        }
+                        for (severity in Severity.entries) {
+                            val findings = report.findings.filter { it.severity == severity }
+                            if (findings.isNotEmpty()) {
+                                val expanded = expandedSeverities[severity] ?: false
+                                item(key = "severity-${severity.name}") {
+                                    PermissionGroupHeader(
+                                        title = severity.label.uppercase(),
+                                        subtitle = "${findings.size} app(s)",
+                                        expanded = expanded,
+                                        tint = AppColors.forSeverity(severity),
+                                        onClick = { expandedSeverities[severity] = !expanded },
+                                    )
+                                }
+                                if (expanded) {
+                                    items(findings, key = { it.packageName }) { finding ->
+                                        FindingCard(
+                                            finding = finding,
+                                            expanded = expandedFindings[finding.packageName] ?: false,
+                                            operationStatus = state.permissionOperationStatus,
+                                            isAuditing = state.isPermissionAuditScanning,
+                                            isShellReady = shellReady,
+                                            onToggleExpanded = {
+                                                expandedFindings[finding.packageName] =
+                                                    !(expandedFindings[finding.packageName] ?: false)
+                                            },
+                                            onTogglePermission = viewModel::setPermissionGranted,
+                                            onOpenSettings = {
+                                                context.startActivity(
+                                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                        data = Uri.parse("package:${finding.packageName}")
+                                                    },
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (report.findings.isEmpty()) {
+                            item {
+                                AuditSection("NO MATCHES") {
+                                    Text(
+                                        "No installed packages requested the sensitive permissions defined by this audit on this Android version.",
+                                        color = AppColors.TextSecondary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+                    } ?: item {
+                        AuditSection("PERMISSION AUDIT") {
+                            when {
+                                state.isPermissionAuditScanning -> Text("Reading installed-app permission declarations…", color = AppColors.Amber)
+                                state.permissionAuditError != null -> Text(state.permissionAuditError.orEmpty(), color = AppColors.Red)
+                                else -> Text("Start a read-only audit of installed-app permission declarations.", color = AppColors.TextSecondary)
+                            }
+                            Spacer(Modifier.size(10.dp))
+                            AmberOutlineButton(
+                                onClick = viewModel::startPermissionAudit,
+                                enabled = !state.isPermissionAuditScanning,
+                            ) {
+                                Text("Run audit", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    if (state.permissionAuditError != null && state.permissionAuditReport != null) {
+                        item {
+                            Text(state.permissionAuditError.orEmpty(), color = AppColors.Red, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+        permissionResultMessage?.let { message ->
+            AlertDialog(
+                onDismissRequest = { permissionResultMessage = null },
+                title = {
+                    Text(
+                        if (message.startsWith("Could not") || message.contains("failed", ignoreCase = true)) {
+                            "Permission update failed"
+                        } else {
+                            "Permission update"
+                        },
+                        color = AppColors.TextPrimary,
+                    )
+                },
+                text = {
+                    Text(
+                        message,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 260.dp)
+                            .verticalScroll(rememberScrollState()),
+                        color = AppColors.TextSecondary,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { permissionResultMessage = null }) {
+                        Text("Close", color = AppColors.NeonBlue)
+                    }
+                },
+                containerColor = AppColors.SurfaceHigh,
+                properties = DialogProperties(usePlatformDefaultWidth = true),
+            )
+        }
+    }
 }
 
 @Composable
@@ -203,6 +260,7 @@ private fun FindingCard(
 	expanded: Boolean,
 	operationStatus: Map<String, String>,
 	isAuditing: Boolean,
+	isShellReady: Boolean,
 	onToggleExpanded: () -> Unit,
 	onTogglePermission: (String, String, Boolean) -> Unit,
 	onOpenSettings: () -> Unit,
@@ -212,9 +270,9 @@ private fun FindingCard(
 			.fillMaxWidth()
 			.clickable(onClick = onToggleExpanded),
 		colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
-		shape = RoundedCornerShape(16.dp),
+		shape = RoundedCornerShape(14.dp),
 	) {
-		Column(Modifier.padding(16.dp)) {
+		Column(Modifier.padding(9.dp)) {
 			Row(verticalAlignment = Alignment.CenterVertically) {
 				Column(Modifier.weight(1f)) {
 					Text(finding.label, color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
@@ -235,44 +293,44 @@ private fun FindingCard(
 					fontSize = 11.sp,
 					modifier = Modifier.padding(top = 4.dp),
 				)
-				finding.permissions.forEach { permission ->
+				finding.permissions.forEachIndexed { index, permission ->
 					val operationKey = "${finding.packageName}|${permission.name}"
 					val status = operationStatus[operationKey]
 					Row(
 						Modifier
 							.fillMaxWidth()
-							.padding(top = 8.dp),
+							.padding(top = 4.dp),
 						verticalAlignment = Alignment.CenterVertically,
 					) {
 						Checkbox(
 							checked = permission.granted,
-							enabled = !isAuditing && status != "in_progress",
+							enabled = !isAuditing && status != "in_progress" && isShellReady,
 							onCheckedChange = { granted ->
 								onTogglePermission(finding.packageName, permission.name, granted)
 							},
+							modifier = Modifier.scale(0.78f),
 						)
 						Column(Modifier.weight(1f)) {
-							Text(permission.label, color = AppColors.TextPrimary, fontSize = 13.sp)
+							Text(permission.label, color = AppColors.TextPrimary, fontSize = 12.sp)
 							Text(permission.name, color = AppColors.TextSecondary, fontFamily = Mono, fontSize = 9.sp)
-							status?.let {
-								Text(
-									if (it == "in_progress") "Applying…" else it,
-									color = if (it.startsWith("Could not")) AppColors.Red else AppColors.Amber,
-									fontSize = 10.sp,
-								)
-							}
 						}
 					}
+					if (index < finding.permissions.lastIndex) {
+						Box(
+							Modifier
+								.fillMaxWidth()
+								.padding(start = 42.dp)
+								.height(1.dp)
+								.background(AppColors.Outline.copy(alpha = 0.55f)),
+						)
+					}
 				}
-				Button(
+				AmberOutlineButton(
 					onClick = onOpenSettings,
-					modifier = Modifier.padding(top = 10.dp),
-					colors = ButtonDefaults.buttonColors(containerColor = AppColors.SurfaceHigh, contentColor = AppColors.TextPrimary),
-					shape = RoundedCornerShape(10.dp),
+					icon = Icons.AutoMirrored.Rounded.OpenInNew,
+					modifier = Modifier.padding(top = 8.dp),
 				) {
 					Text("Review in Android settings", fontSize = 12.sp)
-					Spacer(Modifier.size(6.dp))
-					Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
 				}
 			}
 		}
@@ -295,7 +353,7 @@ private fun PermissionGroupHeader(
 		color = AppColors.Surface,
 	) {
 		Row(
-			Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+			Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
 			verticalAlignment = Alignment.CenterVertically,
 		) {
 			Text(
@@ -337,8 +395,8 @@ private fun AuditSection(title: String, content: @Composable () -> Unit) {
 		shape = RoundedCornerShape(16.dp),
 		color = AppColors.Surface,
 	) {
-		Column(Modifier.padding(16.dp)) {
-			Text(title, color = AppColors.Amber, fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+		Column(Modifier.padding(12.dp)) {
+			Text(title, color = AppColors.WarningAmber, fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 			Spacer(Modifier.size(8.dp))
 			content()
 		}

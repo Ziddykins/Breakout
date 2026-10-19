@@ -10,9 +10,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,10 +37,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Radar
@@ -44,8 +51,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,26 +72,33 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ziddy.breakout.AppUiState
 import com.ziddy.breakout.AppViewModel
 import com.ziddy.breakout.model.PlaybookRun
-import com.ziddy.breakout.model.Severity
 import com.ziddy.breakout.model.ShizukuState
 import com.ziddy.breakout.model.StepRun
 import com.ziddy.breakout.model.StepState
 import com.ziddy.breakout.model.Threat
 import com.ziddy.breakout.engine.Playbook
+import com.ziddy.breakout.ui.components.AmberOutlineButton
+import com.ziddy.breakout.ui.components.TileActionButton
 import com.ziddy.breakout.ui.theme.AppColors
 import com.ziddy.breakout.ui.theme.Mono
 import java.text.SimpleDateFormat
@@ -97,28 +110,16 @@ private val scanDateFormat = SimpleDateFormat("HH:mm", Locale.US)
 @Composable
 fun HomeScreen(
     viewModel: AppViewModel,
+    shellReady: Boolean,
     onPermissions: () -> Unit,
     onPackages: () -> Unit,
     onForensic: () -> Unit,
     onHarden: () -> Unit,
+    onUserPlaybooks: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val shizukuState by viewModel.shizukuState.collectAsStateWithLifecycle()
-    var selected by remember { mutableStateOf<Threat?>(null) }
-
-    val haptics = LocalHapticFeedback.current
-    var wasScanning by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (state.permissionAuditReport == null && !state.isPermissionAuditScanning) {
-            viewModel.startPermissionAudit()
-        }
-    }
-    LaunchedEffect(state.isScanning) {
-        if (wasScanning && !state.isScanning) {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        }
-        wasScanning = state.isScanning
-    }
+    val shizukuError by viewModel.shizukuError.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val openGuide: () -> Unit = {
@@ -127,60 +128,95 @@ fun HomeScreen(
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(AppColors.Background),
+    ) {
+        Image(
+            painter = painterResource(com.ziddy.breakout.R.drawable.breakout_logo),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .alpha(0.09f),
+        )
         Column(Modifier.fillMaxSize()) {
             TopHeader(state)
+            ShizukuCard(
+                state = shizukuState,
+                error = shizukuError,
+                onGrant = viewModel::requestShizuku,
+                onRefresh = viewModel::refreshShizuku,
+                onGuide = openGuide,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    state.permissionAuditReport?.let { DeviceProfileCard(it) }
-                        ?: DeviceProfileLoadingCard(state.isPermissionAuditScanning, state.permissionAuditError)
-                }
-                item {
+                    Text(
+                        "DEVICE TOOLS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.6.sp,
+                        color = AppColors.WarningAmber,
+                        modifier = Modifier.padding(start = 2.dp, bottom = 2.dp),
+                    )
                     MainActionGrid(
+                        shellReady = shellReady,
                         onPermissions = onPermissions,
                         onPackages = onPackages,
                         onForensic = onForensic,
                         onHarden = onHarden,
+                        onUserPlaybooks = onUserPlaybooks,
                     )
-                }
-                item {
-                    ShizukuCard(
-                        state = shizukuState,
-                        onGrant = viewModel::requestShizuku,
-                        onRefresh = viewModel::refreshShizuku,
-                        onGuide = openGuide,
-                    )
-                }
-
-                item { ScanCard(state, onScan = viewModel::startScan) }
-                if (state.threats.isEmpty() && !state.isScanning && state.lastScanAt != null) {
-                    item { AllClearCard(state.usedShellForScan) }
-                }
-                items(state.threats, key = { it.packageName }) { threat ->
-                    ThreatCard(
-                        threat = threat,
-                        run = state.playbookRuns[threat.packageName],
-                        onClick = { selected = threat },
-                    )
-                }
-                if (state.threats.isNotEmpty()) {
-                    item {
-                        Text(
-                            "Tap a finding for the full removal playbook.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AppColors.TextSecondary,
-                            modifier = Modifier.padding(bottom = 8.dp),
-                        )
-                    }
                 }
             }
         }
     }
+}
 
+@Composable
+fun DeviceScannerPanel(viewModel: AppViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val shizukuState by viewModel.shizukuState.collectAsStateWithLifecycle()
+    var selected by remember { mutableStateOf<Threat?>(null) }
+    val haptics = LocalHapticFeedback.current
+    var wasScanning by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.isScanning) {
+        if (wasScanning && !state.isScanning) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+        wasScanning = state.isScanning
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ScanCard(state, onScan = viewModel::startScan)
+        if (state.threats.isEmpty() && !state.isScanning && state.lastScanAt != null) {
+            AllClearCard(state.usedShellForScan)
+        }
+        state.threats.forEach { threat ->
+            ThreatCard(
+                threat = threat,
+                run = state.playbookRuns[threat.packageName],
+                onClick = { selected = threat },
+            )
+        }
+        if (state.threats.isNotEmpty()) {
+            Text(
+                "Tap a finding for the full removal playbook.",
+                style = MaterialTheme.typography.bodySmall,
+                color = AppColors.TextSecondary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
+    }
     selected?.let { threat ->
         ThreatDetailSheet(
             threat = threat,
@@ -194,109 +230,184 @@ fun HomeScreen(
 }
 
 @Composable
-private fun DeviceProfileLoadingCard(isScanning: Boolean, error: String?) {
-    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Text("DEVICE PROFILE", color = AppColors.Amber, fontFamily = Mono, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                when {
-                    isScanning -> "Reading device profile…"
-                    error != null -> error
-                    else -> "Device profile is not available."
-                },
-                color = if (error != null) AppColors.Red else AppColors.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-}
-
-@Composable
 private fun MainActionGrid(
+    shellReady: Boolean,
     onPermissions: () -> Unit,
     onPackages: () -> Unit,
     onForensic: () -> Unit,
     onHarden: () -> Unit,
+    onUserPlaybooks: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MainActionCard("Permissions", onPermissions, Modifier.weight(1f))
-            MainActionCard("Packages", onPackages, Modifier.weight(1f))
+            MainActionCard(
+                "Permissions",
+                "Review sensitive access",
+                Icons.Rounded.Key,
+                shellReady,
+                onPermissions,
+                Modifier.weight(1f),
+            )
+            MainActionCard(
+                "Packages",
+                "Inspect installed apps",
+                Icons.Rounded.Apps,
+                shellReady,
+                onPackages,
+                Modifier.weight(1f),
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MainActionCard("Forensic", onForensic, Modifier.weight(1f))
-            MainActionCard("Harden", onHarden, Modifier.weight(1f))
+            MainActionCard(
+                "Forensic",
+                "Scan device activity",
+                Icons.Rounded.Security,
+                shellReady,
+                onForensic,
+                Modifier.weight(1f),
+            )
+            MainActionCard(
+                "Harden",
+                "Check secure settings",
+                Icons.Rounded.Tune,
+                shellReady,
+                onHarden,
+                Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MainActionCard(
+                "Playbooks",
+                "Build conditional command flows",
+                Icons.Rounded.AccountTree,
+                true,
+                onUserPlaybooks,
+                Modifier.weight(1f),
+            )
+            Spacer(Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun MainActionCard(title: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceHigh),
-        shape = RoundedCornerShape(12.dp),
+private fun MainActionCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier = modifier
+            .height(132.dp)
+            .shadow(
+                elevation = 10.dp,
+                shape = shape,
+                ambientColor = AppColors.Amber.copy(alpha = if (enabled) 0.12f else 0f),
+                spotColor = AppColors.Amber.copy(alpha = if (enabled) 0.12f else 0f),
+            )
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        AppColors.SurfaceHigh.copy(alpha = if (enabled) 0.78f else 0.42f),
+                        AppColors.Background.copy(alpha = if (enabled) 0.9f else 0.64f),
+                    ),
+                ),
+            )
+            .border(
+                BorderStroke(
+                    1.dp,
+                    Brush.linearGradient(
+                        listOf(
+                            AppColors.Amber.copy(alpha = if (enabled) 0.46f else 0.1f),
+                            AppColors.Amber.copy(alpha = if (enabled) 0.12f else 0.04f),
+                        ),
+                    ),
+                ),
+                shape,
+            )
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
     ) {
-        Text(
-            title,
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = AppColors.Amber.copy(alpha = if (enabled) 0.07f else 0.025f),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 18.dp),
-            color = AppColors.TextPrimary,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
+                .align(Alignment.CenterEnd)
+                .padding(end = 8.dp)
+                .size(88.dp),
         )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(11.dp),
+                color = AppColors.Amber.copy(alpha = if (enabled) 0.13f else 0.04f),
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = AppColors.Amber.copy(alpha = if (enabled) 0.95f else 0.25f),
+                    modifier = Modifier.padding(8.dp).size(20.dp),
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                title,
+                color = AppColors.TextPrimary.copy(alpha = if (enabled) 1f else 0.45f),
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                subtitle,
+                color = AppColors.TextSecondary.copy(alpha = if (enabled) 0.9f else 0.45f),
+                fontSize = 11.sp,
+                maxLines = 1,
+            )
+        }
     }
 }
 
 @Composable
 private fun TopHeader(state: AppUiState) {
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 18.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Rounded.LockOpen,
-                contentDescription = null,
-                tint = AppColors.Amber,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "BREAKOUT",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 4.sp,
-                color = AppColors.TextPrimary,
-            )
-            Spacer(Modifier.weight(1f))
-            if (state.isScanning) PulsingChip("SCANNING", AppColors.Amber)
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "MDM detection & removal",
-            style = MaterialTheme.typography.bodySmall,
-            color = AppColors.TextSecondary,
-            letterSpacing = 1.sp,
-        )
-        val counts = state.threats.groupingBy { it.severity }.eachCount()
-        if (counts.isNotEmpty() && !state.isScanning) {
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Severity.entries
-                    .filter { (counts[it] ?: 0) > 0 }
-                    .forEach { severity ->
-                        MiniBadge(
-                            text = "${counts[severity]} ${severity.label}",
-                            color = AppColors.forSeverity(severity),
-                        )
-                    }
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Rounded.Home,
+                    contentDescription = null,
+                    tint = AppColors.NeonBlue,
+                    modifier = Modifier.size(19.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "BREAKOUT",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 4.sp,
+                    color = AppColors.TextPrimary,
+                )
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "MDM detection & removal",
+                style = MaterialTheme.typography.bodySmall,
+                color = AppColors.TextSecondary,
+                letterSpacing = 1.sp,
+            )
         }
+        if (state.isScanning) PulsingChip("SCANNING", AppColors.Amber)
     }
 }
 
@@ -330,25 +441,13 @@ private fun PulsingChip(text: String, color: Color) {
 }
 
 @Composable
-private fun MiniBadge(text: String, color: Color) {
-    Surface(shape = RoundedCornerShape(6.dp), color = color.copy(alpha = 0.12f)) {
-        Row(
-            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(color))
-            Spacer(Modifier.width(6.dp))
-            Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
 private fun ShizukuCard(
     state: ShizukuState,
+    error: String?,
     onGrant: () -> Unit,
     onRefresh: () -> Unit,
     onGuide: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val (color, title, body) = when (state) {
         ShizukuState.READY -> Triple(
@@ -366,8 +465,19 @@ private fun ShizukuCard(
             "Shell not connected",
             "Breakout needs Shizuku to act on detected MDMs. Install and start Shizuku (wireless debugging or root), then re-check.",
         )
+        ShizukuState.CONNECTING -> Triple(
+            AppColors.Amber,
+            "Connecting shell",
+            "Shizuku permission is granted. Waiting for Breakout's shell service to connect.",
+        )
+        ShizukuState.SERVICE_ERROR -> Triple(
+            AppColors.Red,
+            "Shell unavailable",
+            error ?: "Breakout could not connect to the Shizuku shell service. Re-check the connection.",
+        )
     }
     Card(
+        modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
     ) {
@@ -398,16 +508,15 @@ private fun ShizukuCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (state) {
                     ShizukuState.READY -> {}
-                    ShizukuState.NO_PERMISSION -> Button(
+                    ShizukuState.NO_PERMISSION -> AmberOutlineButton(
                         onClick = onGrant,
-                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Amber, contentColor = Color(0xFF201403)),
-                        shape = RoundedCornerShape(10.dp),
                     ) { Text("Grant access") }
-                    ShizukuState.NOT_RUNNING -> TextButton(onClick = onGuide) {
+                    ShizukuState.NOT_RUNNING -> AmberOutlineButton(onClick = onGuide) {
                         Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(14.dp), tint = AppColors.Amber)
                         Spacer(Modifier.width(6.dp))
                         Text("Set-up guide", color = AppColors.Amber)
                     }
+                    ShizukuState.CONNECTING, ShizukuState.SERVICE_ERROR -> {}
                 }
                 if (state != ShizukuState.READY) {
                     TextButton(onClick = onRefresh) { Text("Re-check", color = AppColors.TextSecondary) }
@@ -457,24 +566,21 @@ private fun ScanCard(state: AppUiState, onScan: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(14.dp))
-            Button(
+            TileActionButton(
                 onClick = onScan,
+                icon = Icons.Rounded.Radar,
                 enabled = !state.isScanning,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AppColors.Amber, contentColor = Color(0xFF201403)),
                 modifier = Modifier.fillMaxWidth().height(50.dp),
             ) {
                 if (state.isScanning) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = Color(0xFF201403),
+                        color = AppColors.NeonBlue,
                     )
                     Spacer(Modifier.width(10.dp))
                     Text("Scanning…", fontWeight = FontWeight.Bold)
                 } else {
-                    Icon(Icons.Rounded.Radar, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(10.dp))
                     Text("Scan device", fontWeight = FontWeight.Bold)
                 }
             }
@@ -697,15 +803,30 @@ private fun ThreatDetailSheet(
                 }
             } else {
                 val isRunning = run?.state == com.ziddy.breakout.model.RunState.RUNNING
-                Button(
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = AppColors.Amber.copy(alpha = 0.08f),
+                ) {
+                    Text(
+                        "If a package/user-specific shell restriction is detected, the playbook will automatically register the package for user 0 and retry matching failed steps once. This does not grant root.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppColors.TextSecondary,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                TileActionButton(
                     onClick = onRunPlaybook,
+                    icon = Icons.Rounded.PlayArrow,
                     enabled = !isRunning,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.Amber, contentColor = Color(0xFF201403)),
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) {
                     if (isRunning) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color(0xFF201403))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = AppColors.NeonBlue,
+                        )
                         Spacer(Modifier.width(10.dp))
                         Text("Running playbook…", fontWeight = FontWeight.Bold)
                     } else {
@@ -718,12 +839,18 @@ private fun ThreatDetailSheet(
             Text("Playbook steps", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             val steps = run?.steps ?: Playbook.stepsFor(threat).map { StepRun(it) }
+            val recoveryEligible = run?.steps?.any {
+                it.state == StepState.FAILED &&
+                    Playbook.canRetryAfterUser0Restore(it.step.id) &&
+                    Playbook.needsUser0Recovery(it.output)
+            } == true
             steps.forEachIndexed { index, stepRun ->
                 StepRow(
                     index = index,
                     stepRun = stepRun,
                     enabled = run?.state != com.ziddy.breakout.model.RunState.RUNNING &&
-                        shizukuState == ShizukuState.READY,
+                        shizukuState == ShizukuState.READY &&
+                        (!stepRun.step.conditional || recoveryEligible),
                     onRun = { onRunStep(stepRun.step.id) },
                 )
             }
@@ -832,6 +959,10 @@ private fun StepRow(index: Int, stepRun: StepRun, enabled: Boolean, onRun: () ->
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stepRun.step.title, fontWeight = FontWeight.SemiBold, color = AppColors.TextPrimary, fontSize = 14.sp)
+                    if (stepRun.step.conditional) {
+                        Spacer(Modifier.width(6.dp))
+                        FlagChip("ON FAILURE", AppColors.Amber)
+                    }
                     if (stepRun.step.readOnly) {
                         Spacer(Modifier.width(6.dp))
                         FlagChip("READ-ONLY", AppColors.Blue)

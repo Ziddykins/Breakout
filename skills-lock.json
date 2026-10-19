@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "android-jetpack-compose": {
+      "source": "thebushidocollective/han",
+      "sourceType": "github",
+      "skillPath": "plugins/specialized/android/skills/jetpack-compose/SKILL.md",
+      "computedHash": "11ab9a1ee4ebfb46cea085b9183539a2a9e5b7d5a897bea544297d42ee1b6fc5"
+    },
+    "kotlin-specialist": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/kotlin-specialist/SKILL.md",
+      "computedHash": "44b4826a42dcb4405aada725bdea49f5f32249327fb536c051d9db0504309c95"
+    }
+  }
+}

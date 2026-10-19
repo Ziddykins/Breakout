@@ -25,9 +25,13 @@ The available playbooks and the actions they perform are shown plainly before yo
 
 - Diagnostics: readable reports on accounts, device owner/profile state, permissions, installed management apps, and policy indicators.
 - Permissions: review sensitive requested permissions and try Android grant/revoke commands through Shizuku. Android may reject signature-protected, fixed, or special permissions; changing a runtime permission does not require repackaging the APK.
-- Harden: reads the device's actual `settings list` namespaces and shows recommendations only for recognized keys present on that device. Changes are individually applied rather than bulk-applied.
-- Playbooks: curated sequences of actions for common locked/managed-device scenarios. Each step is explained and presented before execution.
+- Harden: reads the device's actual `settings list` namespaces, explains recommendations, and verifies changes by reading values back. Applying all recognized recommendations requires confirmation and lists the settings that will change.
+- Packages: inspect system, user-installed, disabled, and APEX packages. Freeze packages without clearing data, reinstall an existing package for user 0, clear app data, or uninstall for user 0; each per-package action requires confirmation. Optional hash labels compare against locally captured baselines, not an online Google Play reference.
+- Playbooks: curated sequences of actions for common locked/managed-device scenarios. Each step is explained and presented before execution. If a package/user-specific shell restriction is detected, the playbook can conditionally register the package for user 0 and retry eligible failed steps once; this does not grant root or override device-owner policy.
+- Custom playbooks: create and save command flows locally, routing to different steps based on each command's success or failure. Running one requires Shizuku and explicit confirmation; commands run with shell privileges and are stopped at a safety limit to prevent endless branch loops.
 - Shizuku integration: when available, Breakout can use Shizuku to access privileged APIs in a safer user-mediated way; Breakout never performs hidden actions.
+- App settings: optionally bypass typing the console risk phrase. This does not reduce the risk of shell commands; Shizuku permission is still required.
+- Package integrity monitoring: optionally record local APK SHA-256 and signer-certificate baselines, then check Android package install/update events. Hash changes are shown in the Packages screen; normal app updates also change hashes. This is a local change detector, not an online Google Play authenticity check.
 - Clear warnings: explicit consent is required before any destructive or risky operation.
 
 ## Security & risks (read carefully)

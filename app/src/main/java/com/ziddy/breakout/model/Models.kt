@@ -45,6 +45,8 @@ data class RemovalStep(
     val command: String,
     /** Read-only investigation steps that change nothing but surface useful state. */
     val readOnly: Boolean = false,
+    /** Recovery steps are invoked automatically only after a matching failure. */
+    val conditional: Boolean = false,
 )
 
 enum class StepState { PENDING, RUNNING, DONE, FAILED, SKIPPED }
@@ -119,4 +121,42 @@ data class ForensicReport(
 )
 
 /** State of the Shizuku shell connection. */
-enum class ShizukuState { NOT_RUNNING, NO_PERMISSION, READY }
+enum class ShizukuState { NOT_RUNNING, NO_PERMISSION, CONNECTING, READY, SERVICE_ERROR }
+
+enum class PackageAction(val title: String) {
+    REINSTALL_AS_USER_0("Reinstall for user 0"),
+    UNINSTALL("Uninstall for user 0"),
+    CLEAR_DATA("Clear app data"),
+    FREEZE("Freeze for user 0"),
+}
+
+@kotlinx.serialization.Serializable
+data class UserPlaybook(
+    val id: String,
+    val name: String,
+    val steps: List<UserPlaybookStep>,
+)
+
+@kotlinx.serialization.Serializable
+data class UserPlaybookStep(
+    val id: String,
+    val title: String,
+    val command: String,
+    val onSuccessStepId: String? = null,
+    val onFailureStepId: String? = null,
+)
+
+data class UserPlaybookStepResult(
+    val stepId: String,
+    val title: String,
+    val command: String,
+    val succeeded: Boolean,
+    val output: String,
+    val timedOut: Boolean,
+)
+
+data class UserPlaybookRunResult(
+    val playbookId: String,
+    val steps: List<UserPlaybookStepResult>,
+    val reachedStepLimit: Boolean = false,
+)

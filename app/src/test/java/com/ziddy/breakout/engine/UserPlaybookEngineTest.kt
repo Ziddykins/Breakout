@@ -87,6 +87,50 @@ class UserPlaybookEngineTest {
         assertEquals(expected, decoded)
     }
 
+    @Test
+    fun replacesEveryPackageVariableOccurrenceWithValidatedValue() {
+        val rendered = UserPlaybookEngine.renderCommand(
+            "pm disable {{ package }} && pm clear {{ package }}",
+            "com.example.mdm",
+        )
+
+        assertEquals("pm disable com.example.mdm && pm clear com.example.mdm", rendered)
+        assertNotNull(UserPlaybookEngine.validatePackageVariable("com.example.mdm; reboot"))
+    }
+
+    @Test
+    fun executesAndRecordsCommandsAfterPackageVariableReplacement() = runBlocking {
+        val playbook = playbook(UserPlaybookStep("run", "Run", "pm disable {{ package }}"))
+        var executedCommand = ""
+        val progress = mutableListOf<String>()
+
+        val result = UserPlaybookEngine.run(
+            playbook = playbook,
+            packageVariable = "com.example.mdm",
+            execute = { command ->
+                executedCommand = command
+                UserPlaybookEngine.CommandResult(exitCode = 0)
+            },
+            onStepStarted = { progress += "started:${it.id}" },
+            onStepFinished = { progress += "finished:${it.stepId}" },
+        )
+
+        assertEquals("pm disable com.example.mdm", executedCommand)
+        assertEquals(executedCommand, result.steps.single().command)
+        assertEquals(listOf("started:run", "finished:run"), progress)
+        assertFalse(result.isRunning)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsMissingPackageVariableBeforeExecution() {
+        runBlocking {
+            UserPlaybookEngine.run(
+                playbook = playbook(UserPlaybookStep("run", "Run", "pm disable {{ package }}")),
+                execute = { UserPlaybookEngine.CommandResult(exitCode = 0) },
+            )
+        }
+    }
+
     private fun playbook(vararg steps: UserPlaybookStep) = UserPlaybook(
         id = "test-playbook",
         name = "Test",

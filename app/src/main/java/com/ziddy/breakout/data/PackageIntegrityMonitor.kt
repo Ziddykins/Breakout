@@ -61,9 +61,9 @@ object PackageIntegrityMonitor {
         val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (enabled) {
             setReceiverEnabled(context, true)
-            preferences.edit().putBoolean(PREF_ENABLED, true).apply()
+            preferences.edit {putBoolean(PREF_ENABLED, true)}
         } else {
-            preferences.edit().putBoolean(PREF_ENABLED, false).apply()
+            preferences.edit {putBoolean(PREF_ENABLED, false)}
             setReceiverEnabled(context, false)
         }
     }

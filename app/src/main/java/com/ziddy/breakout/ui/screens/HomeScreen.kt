@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -56,6 +57,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -96,7 +100,10 @@ import com.ziddy.breakout.model.ShizukuState
 import com.ziddy.breakout.model.StepRun
 import com.ziddy.breakout.model.StepState
 import com.ziddy.breakout.model.Threat
+import com.ziddy.breakout.model.UserPlaybook
+import com.ziddy.breakout.model.UserPlaybookRunResult
 import com.ziddy.breakout.engine.Playbook
+import com.ziddy.breakout.engine.UserPlaybookEngine
 import com.ziddy.breakout.ui.components.AmberOutlineButton
 import com.ziddy.breakout.ui.components.TileActionButton
 import com.ziddy.breakout.ui.theme.AppColors
@@ -124,7 +131,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val openGuide: () -> Unit = {
         runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/")))
+            context.startActivity(Intent(Intent.ACTION_VIEW, "https://shizuku.rikka.app/".toUri()))
         }
     }
 
@@ -221,9 +228,20 @@ fun DeviceScannerPanel(viewModel: AppViewModel) {
         ThreatDetailSheet(
             threat = threat,
             run = state.playbookRuns[threat.packageName],
+            userPlaybooks = state.userPlaybooks.filter { it.id in state.scannerPlaybookIds },
+            userPlaybookRuns = state.userPlaybookRuns[threat.packageName].orEmpty(),
+            userPlaybookError = state.userPlaybookError,
+            isUserPlaybookRunning = state.isUserPlaybookRunning,
             shizukuState = shizukuState,
             onDismiss = { selected = null },
             onRunPlaybook = { viewModel.runPlaybook(threat.packageName) },
+            onRunUserPlaybook = { playbookId ->
+                viewModel.runUserPlaybook(
+                    playbookId = playbookId,
+                    packageVariable = threat.packageName,
+                    scannerPackageName = threat.packageName,
+                )
+            },
             onRunStep = { id -> viewModel.runSingleStep(threat.packageName, id) },
         )
     }
@@ -745,11 +763,19 @@ private fun FlagChip(text: String, color: Color) {
 private fun ThreatDetailSheet(
     threat: Threat,
     run: PlaybookRun?,
+    userPlaybooks: List<UserPlaybook>,
+    userPlaybookRuns: Map<String, UserPlaybookRunResult>,
+    userPlaybookError: String?,
+    isUserPlaybookRunning: Boolean,
     shizukuState: ShizukuState,
     onDismiss: () -> Unit,
     onRunPlaybook: () -> Unit,
+    onRunUserPlaybook: (String) -> Unit,
     onRunStep: (String) -> Unit,
 ) {
+    var userPlaybookMenuExpanded by remember { mutableStateOf(false) }
+    var pendingUserPlaybook by remember { mutableStateOf<UserPlaybook?>(null) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = AppColors.Surface,
@@ -789,6 +815,7 @@ private fun ThreatDetailSheet(
             }
 
             Spacer(Modifier.height(18.dp))
+            val isBuiltInPlaybookRunning = run?.state == com.ziddy.breakout.model.RunState.RUNNING
             if (shizukuState != ShizukuState.READY) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
@@ -802,7 +829,6 @@ private fun ThreatDetailSheet(
                     )
                 }
             } else {
-                val isRunning = run?.state == com.ziddy.breakout.model.RunState.RUNNING
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = AppColors.Amber.copy(alpha = 0.08f),
@@ -818,10 +844,10 @@ private fun ThreatDetailSheet(
                 TileActionButton(
                     onClick = onRunPlaybook,
                     icon = Icons.Rounded.PlayArrow,
-                    enabled = !isRunning,
+                    enabled = !isBuiltInPlaybookRunning,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) {
-                    if (isRunning) {
+                    if (isBuiltInPlaybookRunning) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
@@ -831,6 +857,36 @@ private fun ThreatDetailSheet(
                         Text("Running playbook…", fontWeight = FontWeight.Bold)
                     } else {
                         Text("Run full removal playbook", fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (userPlaybooks.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Or run a saved playbook with {{ package }} set to this detected package:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppColors.TextSecondary,
+                    )
+                    Box {
+                        TextButton(
+                            onClick = { userPlaybookMenuExpanded = true },
+                            enabled = !isBuiltInPlaybookRunning && !isUserPlaybookRunning,
+                        ) {
+                            Text("Choose saved playbook", color = AppColors.NeonBlue)
+                        }
+                        DropdownMenu(
+                            expanded = userPlaybookMenuExpanded,
+                            onDismissRequest = { userPlaybookMenuExpanded = false },
+                        ) {
+                            userPlaybooks.forEach { playbook ->
+                                DropdownMenuItem(
+                                    text = { Text(playbook.name) },
+                                    onClick = {
+                                        userPlaybookMenuExpanded = false
+                                        pendingUserPlaybook = playbook
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -853,6 +909,39 @@ private fun ThreatDetailSheet(
                         (!stepRun.step.conditional || recoveryEligible),
                     onRun = { onRunStep(stepRun.step.id) },
                 )
+            }
+            if (userPlaybooks.isNotEmpty()) {
+                Spacer(Modifier.height(18.dp))
+                Text("Added playbooks", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                userPlaybookError?.let {
+                    Text(it, color = AppColors.Red, fontSize = 11.sp)
+                }
+                userPlaybooks.forEach { playbook ->
+                    val playbookRun = userPlaybookRuns[playbook.id]
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = AppColors.SurfaceHigh.copy(alpha = 0.7f),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    playbook.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = { pendingUserPlaybook = playbook },
+                                    enabled = !isBuiltInPlaybookRunning && !isUserPlaybookRunning,
+                                ) {
+                                    Text("Run", color = AppColors.NeonBlue)
+                                }
+                            }
+                            playbookRun?.let { UserPlaybookStepList(playbook, it) }
+                        }
+                    }
+                }
             }
             val adminFailed = run?.steps?.any { it.step.id in Playbook.adminStepIds && it.state == StepState.FAILED } == true
             if (adminFailed) {
@@ -902,6 +991,59 @@ private fun ThreatDetailSheet(
                         )
                     }
                 }
+
+                pendingUserPlaybook?.let { playbook ->
+                    AlertDialog(
+                        onDismissRequest = { pendingUserPlaybook = null },
+                        title = { Text("Run ${playbook.name}?") },
+                        text = {
+                            Column(
+                                Modifier
+                                    .heightIn(max = 360.dp)
+                                    .verticalScroll(rememberScrollState()),
+                            ) {
+                                Text(
+                                    "This runs user-authored shell commands with Shizuku. Review every command before continuing.",
+                                    color = AppColors.WarningAmber,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "Package value: ${threat.packageName}",
+                                    color = AppColors.TextSecondary,
+                                    fontFamily = Mono,
+                                    fontSize = 11.sp,
+                                )
+                                playbook.steps.forEachIndexed { index, step ->
+                                    Text(
+                                        "${index + 1}. ${step.title}: " +
+                                            UserPlaybookEngine.renderCommand(step.command, threat.packageName),
+                                        color = AppColors.TextSecondary,
+                                        fontFamily = Mono,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pendingUserPlaybook = null
+                                    onRunUserPlaybook(playbook.id)
+                                },
+                                enabled = shizukuState == ShizukuState.READY && !isUserPlaybookRunning,
+                            ) {
+                                Text("Run commands", color = AppColors.WarningAmber)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingUserPlaybook = null }) {
+                                Text("Cancel", color = AppColors.TextSecondary)
+                            }
+                        },
+                        containerColor = AppColors.SurfaceHigh,
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -910,6 +1052,45 @@ private fun ThreatDetailSheet(
                 color = AppColors.TextSecondary,
             )
         }
+    }
+}
+
+@Composable
+private fun UserPlaybookStepList(playbook: UserPlaybook, result: UserPlaybookRunResult) {
+    playbook.steps.forEachIndexed { index, step ->
+        val completed = result.steps.lastOrNull { it.stepId == step.id }
+        val isCurrent = result.currentStepId == step.id
+        val state = when {
+            isCurrent -> StepState.RUNNING
+            completed == null -> StepState.PENDING
+            completed.succeeded -> StepState.DONE
+            else -> StepState.FAILED
+        }
+        StepRow(
+            index = index,
+            stepRun = StepRun(
+                step = com.ziddy.breakout.model.RemovalStep(
+                    id = step.id,
+                    title = step.title,
+                    detail = if (step.onSuccessStepId != null || step.onFailureStepId != null) {
+                        "Custom command · branch on success or failure"
+                    } else {
+                        "Custom command"
+                    },
+                    command = completed?.command
+                        ?: if (isCurrent) result.currentStepCommand ?: step.command else step.command,
+                ),
+                state = state,
+                output = completed?.output.orEmpty(),
+            ),
+            enabled = false,
+            onRun = {},
+        )
+    }
+    if (result.isRunning) {
+        Text("Playbook is running…", color = AppColors.Amber, fontSize = 11.sp)
+    } else if (result.reachedStepLimit) {
+        Text("Stopped at the run safety limit.", color = AppColors.WarningAmber, fontSize = 11.sp)
     }
 }
 

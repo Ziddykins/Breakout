@@ -49,8 +49,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ziddy.breakout.AppViewModel
+import com.ziddy.breakout.engine.Playbook
 import com.ziddy.breakout.engine.UserPlaybookEngine
+import com.ziddy.breakout.model.Severity
 import com.ziddy.breakout.model.ShizukuState
+import com.ziddy.breakout.model.Threat
 import com.ziddy.breakout.model.UserPlaybook
 import com.ziddy.breakout.model.UserPlaybookRunResult
 import com.ziddy.breakout.model.UserPlaybookStep
@@ -78,6 +81,7 @@ fun UserPlaybooksScreen(viewModel: AppViewModel) {
     var playbookId by remember { mutableStateOf<String?>(null) }
     val steps = remember { mutableStateListOf<PlaybookDraftStep>() }
     var runConfirmation by remember { mutableStateOf<UserPlaybook?>(null) }
+    var packageVariable by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<UserPlaybook?>(null) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     val draft = playbookId?.let { UserPlaybook(it, playbookName, steps.map(PlaybookDraftStep::toModel)) }
@@ -111,7 +115,7 @@ fun UserPlaybooksScreen(viewModel: AppViewModel) {
             ScreenHeader(
                 title = "Playbooks",
                 icon = Icons.Rounded.AccountTree,
-                subtitle = "Create conditional command flows",
+                subtitle = "Default scanner playbook and custom flows",
                 actions = {
                     IconButton(onClick = ::startNew) {
                         Icon(Icons.Rounded.Add, contentDescription = "Create playbook", tint = AppColors.NeonBlue)
@@ -142,18 +146,29 @@ fun UserPlaybooksScreen(viewModel: AppViewModel) {
                         }
                     }
                 }
+                item(key = "default-playbook") {
+                    DefaultPlaybookCard()
+                }
                 items(state.userPlaybooks, key = UserPlaybook::id) { playbook ->
                     SavedPlaybookCard(
                         playbook = playbook,
                         shellReady = shizukuState == ShizukuState.READY,
                         isRunning = state.isUserPlaybookRunning,
+                        runResult = state.userPlaybookRunResult?.takeIf { it.playbookId == playbook.id },
+                        isInScanner = playbook.id in state.scannerPlaybookIds,
+                        onToggleScanner = {
+                            viewModel.setUserPlaybookInScanner(
+                                playbook.id,
+                                playbook.id !in state.scannerPlaybookIds,
+                            )
+                        },
                         onEdit = { edit(playbook) },
-                        onRun = { runConfirmation = playbook },
+                        onRun = {
+                            packageVariable = ""
+                            runConfirmation = playbook
+                        },
                         onDelete = { pendingDelete = playbook },
                     )
-                }
-                state.userPlaybookRunResult?.let { result ->
-                    item(key = "run-result") { RunResultCard(result) }
                 }
                 if (playbookId != null) {
                     item(key = "editor") {
@@ -200,6 +215,12 @@ fun UserPlaybooksScreen(viewModel: AppViewModel) {
     }
 
     runConfirmation?.let { playbook ->
+        val needsPackageVariable = UserPlaybookEngine.requiresPackageVariable(playbook)
+        val packageVariableError = if (needsPackageVariable) {
+            UserPlaybookEngine.validatePackageVariable(packageVariable)
+        } else {
+            null
+        }
         AlertDialog(
             onDismissRequest = { runConfirmation = null },
             title = { Text("Run ${playbook.name}?") },
@@ -213,9 +234,27 @@ fun UserPlaybooksScreen(viewModel: AppViewModel) {
                         "This executes user-authored shell commands with Shizuku. Commands may permanently modify the device or its data. Only run a playbook you trust.",
                         color = AppColors.WarningAmber,
                     )
+                    if (needsPackageVariable) {
+                        OutlinedTextField(
+                            value = packageVariable,
+                            onValueChange = { packageVariable = it.take(256) },
+                            label = { Text("Package value for {{ package }}") },
+                            supportingText = { Text("Example: com.example.mdm") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            singleLine = true,
+                        )
+                        packageVariableError?.let { Text(it, color = AppColors.Red, fontSize = 11.sp) }
+                    }
                     playbook.steps.forEachIndexed { index, step ->
+                        val command = if (needsPackageVariable && packageVariableError == null) {
+                            UserPlaybookEngine.renderCommand(step.command, packageVariable)
+                        } else {
+                            step.command
+                        }
                         Text(
-                            "${index + 1}. ${step.title}: ${step.command}",
+                            "${index + 1}. ${step.title}: $command",
                             color = AppColors.TextSecondary,
                             fontFamily = Mono,
                             fontSize = 10.sp,
@@ -228,9 +267,14 @@ fun UserPlaybooksScreen(viewModel: AppViewModel) {
                 TextButton(
                     onClick = {
                         runConfirmation = null
-                        viewModel.runUserPlaybook(playbook.id)
+                        viewModel.runUserPlaybook(
+                            playbookId = playbook.id,
+                            packageVariable = packageVariable.takeIf { needsPackageVariable },
+                        )
                     },
-                    enabled = shizukuState == ShizukuState.READY && !state.isUserPlaybookRunning,
+                    enabled = shizukuState == ShizukuState.READY &&
+                        !state.isUserPlaybookRunning &&
+                        packageVariableError == null,
                 ) { Text("Run commands", color = AppColors.WarningAmber) }
             },
             dismissButton = {
@@ -270,6 +314,9 @@ private fun SavedPlaybookCard(
     playbook: UserPlaybook,
     shellReady: Boolean,
     isRunning: Boolean,
+    runResult: UserPlaybookRunResult?,
+    isInScanner: Boolean,
+    onToggleScanner: () -> Unit,
     onEdit: () -> Unit,
     onRun: () -> Unit,
     onDelete: () -> Unit,
@@ -286,6 +333,13 @@ private fun SavedPlaybookCard(
                 Text(playbook.name, color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold)
                 Text("${playbook.steps.size} step(s)", color = AppColors.TextSecondary, fontSize = 11.sp)
             }
+            TextButton(onClick = onToggleScanner, enabled = !isRunning) {
+                Text(
+                    if (isInScanner) "In scanner" else "Add to scanner",
+                    color = if (isInScanner) AppColors.Green else AppColors.NeonBlue,
+                    fontSize = 10.sp,
+                )
+            }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Rounded.Edit, contentDescription = "Edit ${playbook.name}", tint = AppColors.NeonBlue)
             }
@@ -298,6 +352,63 @@ private fun SavedPlaybookCard(
             }
             IconButton(onClick = onDelete, enabled = !isRunning) {
                 Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete ${playbook.name}", tint = AppColors.TextSecondary)
+            }
+        }
+        runResult?.let { result ->
+            RunResultCard(playbook, result)
+        }
+    }
+}
+
+@Composable
+private fun DefaultPlaybookCard() {
+    val previewThreat = Threat(
+        packageName = UserPlaybookEngine.PACKAGE_VARIABLE,
+        label = "Detected MDM",
+        versionName = null,
+        isSystem = false,
+        vendor = "Scanner",
+        product = "Default",
+        severity = Severity.MEDIUM,
+        matchedBy = "signature",
+        isDeviceOwner = true,
+        isProfileOwner = true,
+        adminComponent = "${UserPlaybookEngine.PACKAGE_VARIABLE}/.AdminReceiver",
+        reasons = emptyList(),
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceHigh),
+    ) {
+        Column(
+            Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Default", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
+                    Text("Built-in scanner playbook · view only", color = AppColors.TextSecondary, fontSize = 11.sp)
+                }
+                Text("DEFAULT", color = AppColors.Amber, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                "Preview includes the owner, administrator, and recovery steps. The scanner runs only the steps applicable to each finding.",
+                color = AppColors.TextSecondary,
+                fontSize = 11.sp,
+            )
+            Playbook.stepsFor(previewThreat).forEachIndexed { index, step ->
+                Text(
+                    "${index + 1}. ${step.title}",
+                    color = AppColors.TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    step.command,
+                    color = AppColors.TextSecondary,
+                    fontFamily = Mono,
+                    fontSize = 9.sp,
+                )
             }
         }
     }
@@ -359,6 +470,11 @@ private fun PlaybookEditor(
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 2,
                             maxLines = 5,
+                        )
+                        Text(
+                            "Use {{ package }} to insert a package name when running this playbook.",
+                            color = AppColors.TextSecondary,
+                            fontSize = 10.sp,
                         )
                         RouteSelector(
                             label = "If successful",
@@ -429,28 +545,52 @@ private fun RouteSelector(
 }
 
 @Composable
-private fun RunResultCard(result: UserPlaybookRunResult) {
-    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface)) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Latest run", fontWeight = FontWeight.Bold)
-            result.steps.forEach { step ->
-                Column {
-                    Text(
-                        "${if (step.succeeded) "SUCCESS" else "FAILED"} · ${step.title}" +
-                            if (step.timedOut) " (timed out)" else "",
-                        color = if (step.succeeded) AppColors.Green else AppColors.Red,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(step.command, color = AppColors.TextSecondary, fontFamily = Mono, fontSize = 9.sp)
-                    if (step.output.isNotBlank()) {
-                        Text(step.output, color = AppColors.TextSecondary, fontFamily = Mono, fontSize = 9.sp)
-                    }
+private fun RunResultCard(playbook: UserPlaybook, result: UserPlaybookRunResult) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(if (result.isRunning) "Running step by step…" else "Latest run", fontWeight = FontWeight.Bold)
+        playbook.steps.forEachIndexed { index, playbookStep ->
+            val step = result.steps.lastOrNull { it.stepId == playbookStep.id }
+            val isCurrent = result.currentStepId == playbookStep.id
+            Column {
+                Text(
+                    "${index + 1}. " + when {
+                        isCurrent -> "RUNNING · ${playbookStep.title}"
+                        step == null -> "NOT REACHED · ${playbookStep.title}"
+                        step.succeeded -> "SUCCESS · ${playbookStep.title}"
+                        else -> "FAILED · ${playbookStep.title}" + if (step.timedOut) " (timed out)" else ""
+                    },
+                    color = when {
+                        isCurrent -> AppColors.Amber
+                        step == null -> AppColors.TextSecondary
+                        step.succeeded -> AppColors.Green
+                        else -> AppColors.Red
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    step?.command ?: if (isCurrent) {
+                        result.currentStepCommand ?: playbookStep.command
+                    } else {
+                        playbookStep.command
+                    },
+                    color = AppColors.TextSecondary,
+                    fontFamily = Mono,
+                    fontSize = 9.sp,
+                )
+                if (step?.output?.isNotBlank() == true) {
+                    Text(step.output, color = AppColors.TextSecondary, fontFamily = Mono, fontSize = 9.sp)
                 }
             }
-            if (result.reachedStepLimit) {
-                Text("Stopped at the run safety limit to prevent an endless branch loop.", color = AppColors.WarningAmber)
-            }
+        }
+        if (result.reachedStepLimit) {
+            Text("Stopped at the run safety limit to prevent an endless branch loop.", color = AppColors.WarningAmber)
         }
     }
 }

@@ -159,4 +159,7 @@ data class UserPlaybookRunResult(
     val playbookId: String,
     val steps: List<UserPlaybookStepResult>,
     val reachedStepLimit: Boolean = false,
+    val isRunning: Boolean = false,
+    val currentStepId: String? = null,
+    val currentStepCommand: String? = null,
 )

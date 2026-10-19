@@ -8,6 +8,8 @@ import com.ziddy.breakout.model.UserPlaybookStepResult
 object UserPlaybookEngine {
     const val MAX_STEPS = 30
     const val MAX_RUN_STEPS = 60
+    const val PACKAGE_VARIABLE = "{{ package }}"
+    private val packageVariablePattern = Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")
 
     fun validate(playbook: UserPlaybook): String? {
         if (!playbook.id.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return "Invalid playbook ID."
@@ -38,23 +40,49 @@ object UserPlaybookEngine {
         return null
     }
 
+    fun requiresPackageVariable(playbook: UserPlaybook): Boolean =
+        playbook.steps.any { PACKAGE_VARIABLE in it.command }
+
+    fun validatePackageVariable(value: String?): String? {
+        if (value.isNullOrBlank()) return "Enter a package name for {{ package }}."
+        if (value.length > 255 || !packageVariablePattern.matches(value)) {
+            return "Enter a valid Android package name."
+        }
+        return null
+    }
+
+    fun renderCommand(command: String, packageVariable: String?): String {
+        if (PACKAGE_VARIABLE !in command) return command
+        val validationError = validatePackageVariable(packageVariable)
+        require(validationError == null) { validationError ?: "Invalid package variable." }
+        return command.replace(PACKAGE_VARIABLE, requireNotNull(packageVariable))
+    }
+
     suspend fun run(
         playbook: UserPlaybook,
+        packageVariable: String? = null,
         execute: suspend (String) -> CommandResult,
+        onStepStarted: (UserPlaybookStep) -> Unit = {},
         onStepFinished: (UserPlaybookStepResult) -> Unit = {},
     ): UserPlaybookRunResult {
         require(validate(playbook) == null) { validate(playbook) ?: "Invalid playbook." }
+        if (requiresPackageVariable(playbook)) {
+            val validationError = validatePackageVariable(packageVariable)
+            require(validationError == null) { validationError ?: "Invalid package variable." }
+        }
         val stepsById = playbook.steps.associateBy(UserPlaybookStep::id)
         val results = mutableListOf<UserPlaybookStepResult>()
         var nextStepId: String? = playbook.steps.first().id
 
         while (nextStepId != null && results.size < MAX_RUN_STEPS) {
             val step = requireNotNull(stepsById[nextStepId])
-            val commandResult = execute(step.command)
+            val command = renderCommand(step.command, packageVariable)
+            onStepStarted(step)
+            val commandResult = execute(command)
             val stepResult = UserPlaybookStepResult(
                 stepId = step.id,
                 title = step.title,
-                command = step.command,
+                command = command,
                 succeeded = commandResult.exitCode == 0 && !commandResult.timedOut,
                 output = listOf(commandResult.stdout, commandResult.stderr)
                     .filter(String::isNotBlank)
@@ -71,6 +99,7 @@ object UserPlaybookEngine {
             playbookId = playbook.id,
             steps = results,
             reachedStepLimit = nextStepId != null,
+            isRunning = false,
         )
     }
 

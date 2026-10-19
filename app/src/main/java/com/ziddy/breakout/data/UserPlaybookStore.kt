@@ -27,7 +27,7 @@ class UserPlaybookStore(context: Context) {
     fun save(playbooks: List<UserPlaybook>) {
         validateAll(playbooks)
         val encoded = json.encodeToString(playbooks)
-        if (!preferences.edit().putString(KEY_PLAYBOOKS, encoded).commit()) {
+        if (!preferences.edit(commit = true) {putString(KEY_PLAYBOOKS, encoded)}) {
             throw IOException("Android could not persist the playbooks.")
         }
     }

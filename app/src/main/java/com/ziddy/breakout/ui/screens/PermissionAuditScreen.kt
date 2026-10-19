@@ -156,7 +156,7 @@ fun PermissionAuditScreen(viewModel: AppViewModel) {
                                             onOpenSettings = {
                                                 context.startActivity(
                                                     Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                                        data = Uri.parse("package:${finding.packageName}")
+                                                        data = "package:${finding.packageName}".toUri()
                                                     },
                                                 )
                                             },

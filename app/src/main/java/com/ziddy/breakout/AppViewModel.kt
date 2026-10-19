@@ -77,6 +77,8 @@ data class AppUiState(
     val packageMonitoringMessage: String? = null,
     val packageIntegrityRecords: Map<String, PackageIntegrityRecord> = emptyMap(),
     val userPlaybooks: List<UserPlaybook> = emptyList(),
+    val scannerPlaybookIds: Set<String> = emptySet(),
+    val userPlaybookRuns: Map<String, Map<String, UserPlaybookRunResult>> = emptyMap(),
     val userPlaybookError: String? = null,
     val userPlaybookSaveStatus: String? = null,
     val isUserPlaybookRunning: Boolean = false,
@@ -90,6 +92,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         const val PREFS_NAME = "breakout_prefs"
         const val PREF_DISABLED_HISTORY = "disabled_history"
         const val PREF_CONSOLE_RISK_BYPASS = "disable_console_risk_acknowledgment"
+        const val PREF_SCANNER_PLAYBOOK_IDS = "scanner_playbook_ids"
     }
 
     private val _uiState = MutableStateFlow(AppUiState())
@@ -114,6 +117,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 disableConsoleRiskAcknowledgment = bypassRisksPhrase,
                 consoleRisksAcknowledged = bypassRisksPhrase,
+                scannerPlaybookIds = getApplication<Application>()
+                    .getSharedPreferences(PREFS_NAME, 0)
+                    .getStringSet(PREF_SCANNER_PLAYBOOK_IDS, emptySet())
+                    .orEmpty()
+                    .toSet(),
             )
         }
         ShizukuShell.refreshState()
@@ -293,7 +301,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         try {
             val prefs = getApplication<Application>().getSharedPreferences(PREFS_NAME, 0)
             val json = org.json.JSONArray(packages).toString()
-            prefs.edit().putString(PREF_DISABLED_HISTORY, json).apply()
+            prefs.edit {putString(PREF_DISABLED_HISTORY, json)}
         } catch (error: Exception) {
             logLine(LogKind.ERROR, "Could not save disabled package history: ${error.message ?: "unknown error"}")
         }
@@ -701,9 +709,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setConsoleRiskAcknowledgmentDisabled(disabled: Boolean) {
         getApplication<Application>()
             .getSharedPreferences(PREFS_NAME, 0)
-            .edit()
-            .putBoolean(PREF_CONSOLE_RISK_BYPASS, disabled)
-            .apply()
+            .edit {
+                putBoolean(PREF_CONSOLE_RISK_BYPASS, disabled)
+            }
         _uiState.update {
             it.copy(
                 disableConsoleRiskAcknowledgment = disabled,
@@ -821,13 +829,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteUserPlaybook(playbookId: String) {
         val updated = _uiState.value.userPlaybooks.filterNot { it.id == playbookId }
+        val scannerPlaybookIds = _uiState.value.scannerPlaybookIds - playbookId
         viewModelScope.launch {
             _uiState.update { it.copy(userPlaybookSaveStatus = "Deleting playbook…", userPlaybookError = null) }
             try {
-                withContext(Dispatchers.IO) { userPlaybookStore.save(updated) }
+                val preferences = getApplication<Application>().getSharedPreferences(PREFS_NAME, 0)
+                withContext(Dispatchers.IO) {
+                    if (!preferences.edit().putStringSet(PREF_SCANNER_PLAYBOOK_IDS, scannerPlaybookIds).commit()) {
+                        throw IllegalStateException("Android could not persist scanner playbook selections.")
+                    }
+                    try {
+                        userPlaybookStore.save(updated)
+                    } catch (error: Exception) {
+                        if (!preferences.edit(commit = true) {
+                                    putStringSet(PREF_SCANNER_PLAYBOOK_IDS, _uiState.value.scannerPlaybookIds)
+                                }
+                        ) {
+                            error.addSuppressed(
+                                IllegalStateException("Scanner playbook selection rollback also failed."),
+                            )
+                        }
+                        throw error
+                    }
+                }
                 _uiState.update {
                     it.copy(
                         userPlaybooks = updated,
+                        scannerPlaybookIds = scannerPlaybookIds,
                         userPlaybookError = null,
                         userPlaybookSaveStatus = "Playbook deleted.",
                     )
@@ -847,7 +875,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun runUserPlaybook(playbookId: String) {
+    fun setUserPlaybookInScanner(playbookId: String, included: Boolean) {
+        if (_uiState.value.userPlaybooks.none { it.id == playbookId }) {
+            _uiState.update { it.copy(userPlaybookError = "The selected playbook no longer exists.") }
+            return
+        }
+        val updated = if (included) {
+            _uiState.value.scannerPlaybookIds + playbookId
+        } else {
+            _uiState.value.scannerPlaybookIds - playbookId
+        }
+        val preferences = getApplication<Application>().getSharedPreferences(PREFS_NAME, 0)
+        if (!preferences.edit(commit = true) {putStringSet(PREF_SCANNER_PLAYBOOK_IDS, updated)}) {
+            _uiState.update { it.copy(userPlaybookError = "Could not save scanner playbook selection.") }
+            logLine(LogKind.ERROR, "Could not save scanner playbook selection.")
+            return
+        }
+        _uiState.update {
+            it.copy(
+                scannerPlaybookIds = updated,
+                userPlaybookError = null,
+                userPlaybookSaveStatus = if (included) "Added playbook to the scanner." else "Removed playbook from the scanner.",
+            )
+        }
+    }
+
+    fun runUserPlaybook(
+        playbookId: String,
+        packageVariable: String? = null,
+        scannerPackageName: String? = null,
+    ) {
         if (_uiState.value.isUserPlaybookRunning) return
         if (!ShizukuShell.isReady()) {
             _uiState.update { it.copy(userPlaybookError = "Connect Shizuku before running a playbook.") }
@@ -858,23 +915,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.update { it.copy(userPlaybookError = "The selected playbook no longer exists.") }
             return
         }
+        if (scannerPackageName != null) {
+            if (_uiState.value.threats.none { it.packageName == scannerPackageName }) {
+                _uiState.update { it.copy(userPlaybookError = "The scanner finding is no longer available.") }
+                return
+            }
+            if (playbookId !in _uiState.value.scannerPlaybookIds) {
+                _uiState.update { it.copy(userPlaybookError = "Add this playbook to the scanner before running it here.") }
+                return
+            }
+        }
         UserPlaybookEngine.validate(playbook)?.let { error ->
             _uiState.update { it.copy(userPlaybookError = error) }
             return
         }
+        if (UserPlaybookEngine.requiresPackageVariable(playbook)) {
+            UserPlaybookEngine.validatePackageVariable(packageVariable)?.let { error ->
+                _uiState.update { it.copy(userPlaybookError = error) }
+                return
+            }
+        }
 
         viewModelScope.launch {
+            val initialResult = UserPlaybookRunResult(playbookId, emptyList(), isRunning = true)
             _uiState.update {
-                it.copy(
-                    isUserPlaybookRunning = true,
-                    userPlaybookError = null,
-                    userPlaybookRunResult = UserPlaybookRunResult(playbookId, emptyList()),
-                )
+                it.copy(isUserPlaybookRunning = true, userPlaybookError = null)
             }
-            logLine(LogKind.WARN, "Running user-created playbook '${playbook.name}'.")
+            recordUserPlaybookRun(playbookId, scannerPackageName, initialResult)
+            logLine(
+                LogKind.WARN,
+                "Running user-created playbook '${playbook.name}'" +
+                    (scannerPackageName?.let { " for $it" } ?: "") + ".",
+            )
             try {
                 val result = UserPlaybookEngine.run(
                     playbook = playbook,
+                    packageVariable = packageVariable,
                     execute = { command ->
                         logLine(LogKind.COMMAND, command)
                         val shellResult = withContext(Dispatchers.IO) { ShizukuShell.exec(command) }
@@ -885,15 +961,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             timedOut = shellResult.timedOut,
                         )
                     },
-                    onStepFinished = { stepResult ->
-                        _uiState.update { current ->
-                            val previous = current.userPlaybookRunResult
+                    onStepStarted = { step ->
+                        val current = if (scannerPackageName == null) {
+                            _uiState.value.userPlaybookRunResult
+                        } else {
+                            _uiState.value.userPlaybookRuns[scannerPackageName]?.get(playbookId)
+                        } ?: initialResult
+                        recordUserPlaybookRun(
+                            playbookId,
+                            scannerPackageName,
                             current.copy(
-                                userPlaybookRunResult = previous?.copy(
-                                    steps = previous.steps + stepResult,
+                                isRunning = true,
+                                currentStepId = step.id,
+                                currentStepCommand = UserPlaybookEngine.renderCommand(
+                                    step.command,
+                                    packageVariable,
                                 ),
-                            )
-                        }
+                            ),
+                        )
+                    },
+                    onStepFinished = { stepResult ->
+                        val current = if (scannerPackageName == null) {
+                            _uiState.value.userPlaybookRunResult
+                        } else {
+                            _uiState.value.userPlaybookRuns[scannerPackageName]?.get(playbookId)
+                        } ?: initialResult
+                        recordUserPlaybookRun(
+                            playbookId,
+                            scannerPackageName,
+                            current.copy(
+                                steps = current.steps + stepResult,
+                                currentStepId = null,
+                                currentStepCommand = null,
+                            ),
+                        )
                         logLine(
                             if (stepResult.succeeded) LogKind.SUCCESS else LogKind.ERROR,
                             "${stepResult.title}: ${if (stepResult.succeeded) "succeeded" else "failed"}" +
@@ -904,14 +1005,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     },
                 )
-                _uiState.update {
-                    it.copy(isUserPlaybookRunning = false, userPlaybookRunResult = result)
-                }
+                recordUserPlaybookRun(playbookId, scannerPackageName, result)
+                _uiState.update { it.copy(isUserPlaybookRunning = false) }
                 if (result.reachedStepLimit) {
                     logLine(LogKind.WARN, "Playbook stopped at the ${UserPlaybookEngine.MAX_RUN_STEPS}-step safety limit.")
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 _uiState.update { it.copy(isUserPlaybookRunning = false) }
+                val current = if (scannerPackageName == null) {
+                    _uiState.value.userPlaybookRunResult
+                } else {
+                    _uiState.value.userPlaybookRuns[scannerPackageName]?.get(playbookId)
+                }
+                current?.let {
+                    recordUserPlaybookRun(
+                        playbookId,
+                        scannerPackageName,
+                        it.copy(isRunning = false, currentStepId = null, currentStepCommand = null),
+                    )
+                }
                 logLine(LogKind.WARN, "User playbook run cancelled; earlier device changes may remain.")
                 throw cancelled
             } catch (error: Exception) {
@@ -921,7 +1033,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         userPlaybookError = "Playbook stopped: ${error.message ?: "unknown error"}",
                     )
                 }
+                val current = if (scannerPackageName == null) {
+                    _uiState.value.userPlaybookRunResult
+                } else {
+                    _uiState.value.userPlaybookRuns[scannerPackageName]?.get(playbookId)
+                }
+                current?.let {
+                    recordUserPlaybookRun(
+                        playbookId,
+                        scannerPackageName,
+                        it.copy(isRunning = false, currentStepId = null, currentStepCommand = null),
+                    )
+                }
                 logLine(LogKind.ERROR, "User playbook failed: ${error.message ?: "unknown error"}")
+            }
+        }
+    }
+
+    private fun recordUserPlaybookRun(
+        playbookId: String,
+        scannerPackageName: String?,
+        result: UserPlaybookRunResult,
+    ) {
+        _uiState.update { state ->
+            if (scannerPackageName == null) {
+                state.copy(userPlaybookRunResult = result)
+            } else {
+                val packageRuns = state.userPlaybookRuns[scannerPackageName].orEmpty() + (playbookId to result)
+                state.copy(userPlaybookRuns = state.userPlaybookRuns + (scannerPackageName to packageRuns))
             }
         }
     }
